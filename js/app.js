@@ -253,6 +253,7 @@ async function refresh(){
     if (gmpRes.value.history) state.history = { ...state.history, ...gmpRes.value.history };
     state.fetchedAt = gmpRes.value.fetchedAt || new Date().toISOString();
     recordLocalHistory(state.gmp);
+    histKeyCache.clear();
     $('#src-gmp').innerHTML = `GMP <b>${state.gmp.length}</b> from IPO Watch`;
     $('#src-gmp').classList.remove('err');
   } else {
@@ -395,19 +396,43 @@ function allIpos(){
 
 // ---------------------------------------------------------------- history
 
+/**
+ * History is written under the IPO Watch name. Once an issue closes it drops
+ * off that list, so the row falls back to its NSE key and would lose its own
+ * history. Match the stored key by prefix in that case, and cache the result.
+ */
+const histKeyCache = new Map();
+
+function resolveHistKey(key){
+  if (!key) return key;
+  if (state.history[key]?.points?.length) return key;
+  if (histKeyCache.has(key)) return histKeyCache.get(key);
+
+  let best = null;
+  for (const k of Object.keys(state.history)){
+    if (!state.history[k]?.points?.length) continue;
+    if (key.startsWith(k) || k.startsWith(key)){
+      if (!best || k.length > best.length) best = k;
+    }
+  }
+  const resolved = best || key;
+  histKeyCache.set(key, resolved);
+  return resolved;
+}
+
 function historyPoints(key){
-  const pts = state.history[key]?.points || [];
+  const pts = state.history[resolveHistKey(key)]?.points || [];
   return pts.map((p) => ({ t: Date.parse(p.t), v: p.gmp })).filter((p) => Number.isFinite(p.t));
 }
 
 function gmpChange(key){
-  const pts = state.history[key]?.points || [];
+  const pts = state.history[resolveHistKey(key)]?.points || [];
   if (pts.length < 2) return null;
   return pts[pts.length-1].gmp - pts[0].gmp;
 }
 
 function sparkline(key, w = 74, h = 22){
-  const pts = historyPoints(key);
+  const pts = historyPoints(resolveHistKey(key));
   if (pts.length < 2) return `<span style="font-size:11px;color:var(--faint)">collecting…</span>`;
   const vals = pts.map((p) => p.v);
   const min = Math.min(...vals), max = Math.max(...vals);

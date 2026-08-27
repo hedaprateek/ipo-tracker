@@ -289,12 +289,20 @@ function barChart(wrap, rows, opts) {
     return;
   }
 
-  const rowH = 30, gap = 2, padL = opts.labelWidth || 140, padR = 56, padT = 6, padB = 22;
+  const maxValue = Math.max(...rows.map((r) => r.value), 0);
+  // A 1x line is only worth drawing while it still sits inside the plot. Once
+  // an issue is 300x subscribed it collapses onto the axis and its label lands
+  // on top of the first bar, so drop it and let the numbers speak.
+  const refVisible = !!opts.reference && opts.reference >= maxValue * 0.04;
+
+  const rowH = 30, gap = 2, padL = opts.labelWidth || 140, padR = 56;
+  const padT = refVisible ? 18 : 6;
+  const padB = 22;
   const W = opts.width || wrap.clientWidth || 560;
   const H = padT + rows.length * rowH + padB;
   const plotW = Math.max(10, W - padL - padR);
 
-  const maxV = Math.max(...rows.map((r) => r.value), opts.reference || 0);
+  const maxV = Math.max(maxValue, refVisible ? opts.reference : 0);
   const xTicks = ticks(0, maxV, 4);
   const hi = Math.max(maxV, xTicks[xTicks.length - 1]);
   const X = (v) => padL + (v / hi) * plotW;
@@ -351,14 +359,19 @@ function barChart(wrap, rows, opts) {
     hit.addEventListener('mouseleave', () => tip.hide());
   });
 
-  if (opts.reference) {
+  if (refVisible) {
     const x = X(opts.reference);
     el('line', {
-      x1: x, x2: x, y1: padT - 2, y2: padT + rows.length * rowH,
+      x1: x, x2: x, y1: padT - 4, y2: padT + rows.length * rowH,
       stroke: 'var(--chart-ref)', 'stroke-width': 1.5,
     }, svg);
+    // Label sits in the padding above the bars, never over the first row.
+    // Flip it left of the line when the line is near the right edge.
+    const nearRight = x > W - 130;
     el('text', {
-      x: x + 5, y: padT + 9, class: 'chart-reflabel',
+      x: nearRight ? x - 5 : x + 5, y: padT - 8,
+      'text-anchor': nearRight ? 'end' : 'start',
+      class: 'chart-reflabel',
     }, svg).textContent = opts.referenceLabel || 'fully subscribed';
   }
 }
