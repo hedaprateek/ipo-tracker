@@ -1,0 +1,50 @@
+name: Fetch IPO data
+
+# GitHub Pages serves files but cannot run server.js, so this fetches NSE and
+# IPO Watch on a schedule and commits the JSON the page reads. Each run also
+# appends to data/gmp-history.json, which is what builds the GMP trend.
+on:
+  schedule:
+    # Every 30 minutes. GitHub queues cron jobs, so expect some drift.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'scripts/**'
+      - '.github/workflows/fetch-data.yml'
+
+concurrency:
+  group: fetch-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Fetch NSE and GMP data
+        run: node scripts/fetch-data.js
+
+      - name: Commit if changed
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/
+          if git diff --staged --quiet; then
+            echo "no change"
+            exit 0
+          fi
+          git commit -m "data: refresh $(date -u '+%Y-%m-%d %H:%M UTC')"
+          # The schedule can overlap a manual push; rebase rather than fail.
+          git pull --rebase --autostash origin main
+          git push
