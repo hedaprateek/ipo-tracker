@@ -1,0 +1,17 @@
+{
+  "name": "ipo-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Open, upcoming and closed IPOs with live GMP trend, category-wise subscription and an allotment helper.",
+  "scripts": {
+    "start": "node server.js",
+    "fetch": "node scripts/fetch-data.js",
+    "reports": "node scripts/generate-reports.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0"
+  },
+  "engines": {
+    "node": ">=22.15"
+  }
+}

@@ -1,153 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="dark light" />
 <title>IPO Tracker</title>
-<style>
-  :root{
-    --bg:#0f1216; --panel:#171b21; --panel2:#1d222a; --line:#2a313b;
-    --ink:#e6eaf0; --dim:#98a2b3; --faint:#6b7480;
-    --up:#22c55e; --down:#ef4444; --flat:#eab308;
-    --accent:#3b82f6; --accent-ink:#dbeafe;
-    --open:#22c55e; --upcoming:#3b82f6; --closed:#8b93a1;
-    --radius:10px;
-  }
-  @media (prefers-color-scheme: light){
-    :root{
-      --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f5; --line:#dfe3e8;
-      --ink:#131720; --dim:#5b6472; --faint:#8b93a1; --accent-ink:#1e40af;
-    }
-  }
-  *{box-sizing:border-box}
-  body{
-    margin:0; background:var(--bg); color:var(--ink);
-    font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  }
-  a{color:var(--accent)}
-  header{
-    position:sticky; top:0; z-index:20; background:var(--bg);
-    border-bottom:1px solid var(--line); padding:10px 16px;
-    display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-  }
-  h1{font-size:16px; margin:0; letter-spacing:-.01em; white-space:nowrap}
-  h1 span{color:var(--faint); font-weight:400}
-  .grow{flex:1}
-  button{
-    font:inherit; color:var(--ink); background:var(--panel2);
-    border:1px solid var(--line); border-radius:7px; padding:5px 11px; cursor:pointer;
-  }
-  button:hover{border-color:var(--faint)}
-  button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
-  button.on{background:var(--accent); border-color:var(--accent); color:#fff}
-  .tabs{display:flex; gap:6px; padding:10px 16px 0; flex-wrap:wrap}
-  .tabs button{border-radius:7px 7px 0 0}
-  main{padding:14px 16px 60px; max-width:1400px}
-  section[hidden]{display:none !important}
-
-  .status{
-    padding:6px 16px; font-size:12.5px; color:var(--dim);
-    border-bottom:1px solid var(--line); display:flex; gap:10px; flex-wrap:wrap;
-  }
-  .status .err{color:var(--down)}
-  .banner{
-    margin:14px 16px 0; padding:10px 12px; border-radius:var(--radius);
-    background:var(--panel); border:1px solid var(--line); font-size:13px; color:var(--dim);
-  }
-  .banner b{color:var(--ink)}
-  code{
-    background:var(--panel2); border:1px solid var(--line); border-radius:4px;
-    padding:1px 5px; font-size:12.5px; font-family:ui-monospace,Consolas,monospace;
-  }
-
-  .group-title{
-    display:flex; align-items:center; gap:9px; margin:22px 0 10px; font-size:13px;
-    text-transform:uppercase; letter-spacing:.07em; color:var(--dim);
-  }
-  .group-title:first-child{margin-top:4px}
-  .count{
-    background:var(--panel2); border:1px solid var(--line); border-radius:20px;
-    padding:0 8px; font-size:11px; letter-spacing:0;
-  }
-
-  .cards{display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
-  .card{
-    background:var(--panel); border:1px solid var(--line);
-    border-left:3px solid var(--line); border-radius:var(--radius); padding:12px 13px;
-  }
-  .card.open{border-left-color:var(--open)}
-  .card.upcoming{border-left-color:var(--upcoming)}
-  .card.closed{border-left-color:var(--closed)}
-  .card h3{margin:0 0 2px; font-size:14.5px; line-height:1.3}
-  .sub{font-size:12px; color:var(--faint); margin-bottom:9px}
-  .tag{
-    display:inline-block; font-size:10.5px; padding:1px 6px; border-radius:4px;
-    background:var(--panel2); border:1px solid var(--line); color:var(--dim);
-    text-transform:uppercase; letter-spacing:.04em; vertical-align:1px;
-  }
-  .kv{display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-size:12.5px}
-  .kv dt{color:var(--faint)}
-  .kv dd{margin:0; text-align:right; font-variant-numeric:tabular-nums}
-  .gmpline{
-    display:flex; align-items:center; gap:8px; margin-top:10px; padding-top:9px;
-    border-top:1px solid var(--line);
-  }
-  .gmpval{font-size:17px; font-weight:600; font-variant-numeric:tabular-nums}
-  .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--flat)}
-  .gain{font-size:12px; color:var(--dim)}
-  .spark{margin-left:auto}
-  .links{display:flex; gap:8px; margin-top:9px; font-size:12px; flex-wrap:wrap}
-
-  table{border-collapse:collapse; width:100%; font-size:13px}
-  .tablewrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--panel)}
-  th,td{padding:7px 10px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap}
-  th{
-    font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--dim);
-    font-weight:600; position:sticky; top:0; background:var(--panel2); cursor:pointer;
-  }
-  tbody tr:last-child td{border-bottom:none}
-  tbody tr:hover{background:var(--panel2)}
-  td.num{text-align:right; font-variant-numeric:tabular-nums}
-
-  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px}
-  input[type=text],select{
-    font:inherit; color:var(--ink); background:var(--panel); border:1px solid var(--line);
-    border-radius:7px; padding:6px 10px; min-width:150px;
-  }
-  select{padding:4px 8px; max-width:210px}
-  input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px}
-  .pill{
-    display:inline-flex; align-items:center; gap:7px; background:var(--panel);
-    border:1px solid var(--line); border-radius:20px; padding:4px 6px 4px 12px; font-size:13px;
-  }
-  .pill b{font-family:ui-monospace,Consolas,monospace; font-weight:600; letter-spacing:.03em}
-  .pill small{color:var(--faint)}
-  .pill button{border:none; background:none; padding:2px 5px; color:var(--faint); font-size:15px; line-height:1}
-  .pill button:hover{color:var(--down)}
-  .note{font-size:12.5px; color:var(--dim); margin:6px 0 0}
-  .empty{color:var(--faint); font-size:13px; padding:14px 0}
-  .toast{
-    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
-    background:var(--ink); color:var(--bg); padding:8px 16px; border-radius:20px;
-    font-size:13px; opacity:0; pointer-events:none; transition:opacity .2s; z-index:50;
-  }
-  .toast.show{opacity:1}
-</style>
+<link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
 <header>
-  <h1>IPO Tracker <span id="today"></span></h1>
+  <h1>IPO Tracker <span class="dot">·</span> <span id="today" style="color:var(--faint);font-weight:400"></span></h1>
   <div class="grow"></div>
+  <button id="theme" class="icon" title="Toggle light/dark" aria-label="Toggle theme">☀</button>
+  <button id="auto">Auto: off</button>
   <button id="refresh" class="primary">Refresh</button>
-  <button id="auto">Auto-refresh: off</button>
 </header>
 
-<div class="status">
-  <span id="src-ipo">IPOs: —</span>
-  <span id="src-gmp">GMP: —</span>
-  <span id="mode"></span>
+<div class="statusbar">
+  <span id="src-ipo">IPOs —</span>
+  <span id="src-gmp">GMP —</span>
+  <span id="src-report">AI reports —</span>
+  <span id="mode" style="margin-left:auto"></span>
 </div>
 
 <div class="tabs">
@@ -156,26 +29,53 @@
   <button data-tab="allot">My Applications</button>
 </div>
 
-<div id="offline-banner" class="banner" hidden></div>
-
 <main>
-  <section id="tab-ipos">
-    <div class="row">
-      <input type="text" id="search" placeholder="Filter by name or symbol…" />
-      <button data-board="all" class="board on">All</button>
-      <button data-board="Mainboard" class="board">Mainboard</button>
-      <button data-board="SME" class="board">SME</button>
+  <div id="offline-banner" class="banner" hidden></div>
+
+  <!-- One filter row scoping both the IPO and GMP views. -->
+  <div class="filters" id="filter-row">
+    <input type="search" id="search" placeholder="Search name or symbol…" aria-label="Search IPOs" />
+
+    <div class="seg" role="group" aria-label="Board">
+      <button data-board data-value="all" class="on">All</button>
+      <button data-board data-value="Mainboard">Mainboard</button>
+      <button data-board data-value="SME">SME</button>
     </div>
+
+    <div class="seg" role="group" aria-label="Status">
+      <button data-status data-value="all" class="on">Any status</button>
+      <button data-status data-value="open">Open</button>
+      <button data-status data-value="upcoming">Upcoming</button>
+      <button data-status data-value="closed">Closed</button>
+    </div>
+
+    <label class="filter-label" for="sort">Sort</label>
+    <select id="sort">
+      <option value="closing">Closing date</option>
+      <option value="gmp">GMP %</option>
+      <option value="subscribed">Subscription</option>
+      <option value="name">Name</option>
+    </select>
+
+    <button id="reset-filters">Reset</button>
+    <span class="result-count" id="result-count"></span>
+  </div>
+
+  <section id="tab-ipos">
     <div id="ipo-groups"></div>
   </section>
 
   <section id="tab-gmp" hidden>
-    <p class="note">
-      GMP is an unofficial grey-market indicator, not an exchange price. Trend
-      sparklines are built from snapshots this app records each time it refreshes —
-      they fill in as you keep using it.
-    </p>
-    <div class="tablewrap" style="margin-top:12px">
+    <div class="chart-card">
+      <h4>Grey market premium over time</h4>
+      <p class="chart-note">The six live issues with the highest premium, as a percentage of issue price so different price bands compare fairly. Click a name to hide it.
+        GMP is an unofficial grey-market quote, not an exchange price — the table below carries
+        every value shown here.</p>
+      <div id="compare-chart"></div>
+      <div class="legend" id="compare-legend"></div>
+    </div>
+
+    <div class="tablewrap">
       <table id="gmp-table">
         <thead><tr>
           <th data-sort="name">IPO</th>
@@ -183,10 +83,11 @@
           <th data-sort="status">Status</th>
           <th data-sort="price" class="num">Price</th>
           <th data-sort="gmp" class="num">GMP</th>
-          <th data-sort="estGainPct" class="num">Est. gain</th>
+          <th data-sort="gmpPct" class="num">GMP %</th>
+          <th data-sort="subscription" class="num">Subscribed</th>
           <th data-sort="change" class="num">Change</th>
           <th>Trend</th>
-          <th>Dates</th>
+          <th>Verdict</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -194,11 +95,10 @@
   </section>
 
   <section id="tab-allot" hidden>
-    <p class="note" style="margin-bottom:12px">
-      Every registrar puts a CAPTCHA on allotment lookup, so no page can check it
-      for you automatically. This keeps your PANs and DP IDs on this device and
-      gives you one click per IPO: it copies the ID and opens the right registrar,
-      so you only solve the CAPTCHA and paste.
+    <p class="note" style="margin:14px 0 12px">
+      Every registrar puts a CAPTCHA on allotment lookup, so no page can check it for you
+      automatically. This keeps your PANs and DP IDs on this device and gives you one click per
+      IPO: it copies the ID and opens the right registrar, so you only solve the CAPTCHA and paste.
     </p>
 
     <div class="row">
@@ -211,24 +111,22 @@
     <div class="group-title">Check allotment <span class="count" id="allot-count">0</span></div>
     <div class="tablewrap">
       <table id="allot-table">
-        <thead><tr>
-          <th>IPO</th><th>Closed</th><th>Registrar</th><th>Check with</th>
-        </tr></thead>
+        <thead><tr><th>IPO</th><th>Closed</th><th>Registrar</th><th>Check with</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
 
     <div class="group-title">Universal lookups</div>
     <div class="cards">
-      <div class="card">
+      <div class="card" style="cursor:default">
         <h3>BSE — any public issue</h3>
         <div class="sub">Works for every mainboard and SME IPO, by PAN or application number.</div>
-        <div class="links"><a href="https://www.bseindia.com/investors/appli_check.aspx" target="_blank" rel="noopener">Open BSE allotment status ↗</a></div>
+        <a href="https://www.bseindia.com/investors/appli_check.aspx" target="_blank" rel="noopener">Open BSE allotment status ↗</a>
       </div>
-      <div class="card">
-        <h3>NSE — bid details</h3>
-        <div class="sub">Confirm your bid was received by the exchange while the issue is still open.</div>
-        <div class="links"><a href="https://www.nseindia.com/products-services/equity-ipo-bid-details" target="_blank" rel="noopener">Open NSE bid verification ↗</a></div>
+      <div class="card" style="cursor:default">
+        <h3>NSE — bid verification</h3>
+        <div class="sub">Confirm the exchange received your bid while the issue is still open.</div>
+        <a href="https://www.nseindia.com/products-services/equity-ipo-bid-details" target="_blank" rel="noopener">Open NSE bid details ↗</a>
       </div>
     </div>
   </section>
@@ -236,753 +134,7 @@
 
 <div class="toast" id="toast"></div>
 
-<script>
-(() => {
-'use strict';
-
-// ------------------------------------------------------------------ state
-
-const LS = {
-  ids: 'ipotracker.ids',
-  history: 'ipotracker.history',
-  snapshot: 'ipotracker.snapshot',
-  registrars: 'ipotracker.registrars',
-};
-
-const state = {
-  ipos: [],
-  gmp: [],
-  history: {},          // key -> {name, points:[{t,gmp}]}
-  board: 'all',
-  search: '',
-  gmpSort: { col: 'gmp', dir: -1 },
-  mode: null,           // 'server' | 'static' | 'proxy'
-  autoTimer: null,
-};
-
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => [...document.querySelectorAll(sel)];
-
-const load = (k, fallback) => {
-  try { return JSON.parse(localStorage.getItem(k)) ?? fallback; }
-  catch { return fallback; }
-};
-const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-
-// ------------------------------------------------------------------ helpers
-
-const MONTHS = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
-                 jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' };
-
-function nameKey(name){
-  return String(name || '')
-    .toLowerCase()
-    .replace(/&amp;/g,'&')
-    .replace(/\b(limited|ltd|private|pvt|india|indian|the|company|co)\b/g,'')
-    .replace(/[^a-z0-9]/g,'');
-}
-
-function todayISO(){
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function fmtDate(iso){
-  if (!iso) return '—';
-  const [y,m,d] = iso.split('-');
-  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${Number(d)} ${names[Number(m)-1]}`;
-}
-
-function daysBetween(a, b){
-  return Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
-}
-
-function relativeTime(iso){
-  const mins = Math.round((Date.now() - Date.parse(iso)) / 60000);
-  if (!Number.isFinite(mins)) return 'recently';
-  if (mins < 2) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ago`;
-  const days = Math.round(hrs / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
-}
-
-function money(n){
-  if (n === null || n === undefined || Number.isNaN(n)) return '—';
-  return '₹' + Number(n).toLocaleString('en-IN');
-}
-
-function crore(n){
-  const v = Number(n);
-  if (!v || Number.isNaN(v)) return null;
-  return v;
-}
-
-function toast(msg){
-  const el = $('#toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.remove('show'), 1800);
-}
-
-function esc(s){
-  return String(s ?? '').replace(/[&<>"]/g, (c) =>
-    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
-}
-
-// ------------------------------------------------------------------ fetching
-
-// Public CORS proxies, tried in order, only when the local server is absent.
-const PROXIES = [
-  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-];
-
-async function viaProxy(url, asText){
-  let lastErr;
-  for (const make of PROXIES){
-    try {
-      const res = await fetch(make(url), { cache: 'no-store' });
-      if (!res.ok) throw new Error(String(res.status));
-      const text = await res.text();
-      if (/^error code:/i.test(text) || text.includes('"error"') && text.length < 200){
-        throw new Error('proxy rejected');
-      }
-      return asText ? text : JSON.parse(text);
-    } catch (err){ lastErr = err; }
-  }
-  throw lastErr || new Error('all proxies failed');
-}
-
-/**
- * Three ways to get data, best first:
- *   'server' — local node server.js proxying live upstreams
- *   'static' — data/*.json committed by the scheduled GitHub Action (Pages)
- *   'proxy'  — public CORS proxies, unreliable, last resort for file://
- */
-async function detectMode(){
-  if (state.mode) return state.mode;
-
-  try {
-    const res = await fetch('api/health', { cache: 'no-store' });
-    if (res.ok && (await res.json()).ok === true) return (state.mode = 'server');
-  } catch {}
-
-  try {
-    const res = await fetch('data/gmp.json', { cache: 'no-store' });
-    if (res.ok && Array.isArray((await res.json()).gmp)) return (state.mode = 'static');
-  } catch {}
-
-  return (state.mode = 'proxy');
-}
-
-function isoFromNse(s){
-  const m = String(s || '').match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})/);
-  if (!m) return null;
-  const mm = MONTHS[m[2].toLowerCase()];
-  return mm ? `${m[3]}-${mm}-${m[1].padStart(2,'0')}` : null;
-}
-
-/** Fallback path: hit NSE through a public CORS proxy and normalise here. */
-async function fetchIposDirect(){
-  const base = 'https://www.nseindia.com/api/';
-  const [cur, up, past] = await Promise.all([
-    viaProxy(base + 'ipo-current-issue').catch(() => []),
-    viaProxy(base + 'all-upcoming-issues?category=ipo').catch(() => []),
-    viaProxy(base + 'public-past-issues').catch(() => []),
-  ]);
-  const arr = (x) => Array.isArray(x) ? x : [];
-  const bySymbol = new Map();
-  const put = (r) => {
-    if (!r.symbol) return;
-    const prev = bySymbol.get(r.symbol) || {};
-    for (const [k,v] of Object.entries(r)) if (v || v === 0) prev[k] = v;
-    bySymbol.set(r.symbol, prev);
-  };
-  for (const r of arr(cur)) put({
-    symbol:r.symbol, company:r.companyName, start:isoFromNse(r.issueStartDate),
-    end:isoFromNse(r.issueEndDate), priceBand:r.issuePrice, issueSize:r.issueSize,
-    subscription:r.noOfTime ? Number(r.noOfTime) : null,
-  });
-  for (const r of arr(up)) put({
-    symbol:r.symbol, company:r.companyName, start:isoFromNse(r.issueStartDate),
-    end:isoFromNse(r.issueEndDate), priceBand:r.issuePrice, issueSize:r.issueSize,
-  });
-  for (const r of arr(past)) put({
-    symbol:r.symbol, company:r.company, start:isoFromNse(r.ipoStartDate),
-    end:isoFromNse(r.ipoEndDate), priceBand:r.priceRange,
-    listingDate:(r.listingDate && r.listingDate !== '-') ? isoFromNse(r.listingDate) : null,
-  });
-  return [...bySymbol.values()].map((r) => ({ ...r, board:'Mainboard', source:'nse' }));
-}
-
-function stripTags(s){
-  return s.replace(/<[^>]+>/g,'')
-    .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
-    .replace(/&#8377;|&#x20b9;/g,'₹')
-    .replace(/\s+/g,' ').trim();
-}
-
-function parseMoney(s){
-  const m = String(s || '').replace(/,/g,'').match(/-?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
-}
-
-/** Fallback path: parse the IPO Watch GMP tables in the browser. */
-async function fetchGmpDirect(){
-  const html = await viaProxy('https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/', true);
-  const tables = html.match(/<table[\s\S]*?<\/table>/g) || [];
-  const out = [];
-  tables.slice(0,2).forEach((table, idx) => {
-    const board = idx === 0 ? 'Mainboard' : 'SME';
-    for (const row of (table.match(/<tr[\s\S]*?<\/tr>/g) || [])){
-      const c = (row.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || []).map(stripTags);
-      if (c.length < 7 || /ipo\s*name/i.test(c[0])) continue;
-      const gain = String(c[4]).match(/\(([-\d.]+)%\)/);
-      out.push({
-        name:c[0], key:nameKey(c[0]), board,
-        gmp:parseMoney(c[1]),
-        trend:/🟢/.test(c[2]) ? 'up' : /🔴/.test(c[2]) ? 'down' : 'flat',
-        price:parseMoney(c[3]), estListing:parseMoney(c[4]),
-        estGainPct: gain ? Number(gain[1]) : null,
-        dates:c[5], status:String(c[6]).toLowerCase(), updated:c[7],
-      });
-    }
-  });
-  return out;
-}
-
-/** Merge fresh GMP readings into the locally-kept history (one point/hour). */
-function recordLocalHistory(rows){
-  const h = state.history;
-  const stamp = new Date().toISOString();
-  const bucket = stamp.slice(0,13);
-  for (const r of rows){
-    if (!r.key || r.gmp === null) continue;
-    const s = h[r.key] || (h[r.key] = { name:r.name, points:[] });
-    s.name = r.name;
-    const last = s.points[s.points.length - 1];
-    if (last && last.t.slice(0,13) === bucket){ last.gmp = r.gmp; continue; }
-    s.points.push({ t: stamp, gmp: r.gmp });
-    if (s.points.length > 200) s.points = s.points.slice(-200);
-  }
-  save(LS.history, h);
-}
-
-async function refresh(){
-  const btn = $('#refresh');
-  btn.disabled = true;
-  btn.textContent = 'Refreshing…';
-
-  const mode = await detectMode();
-  const json = (u) => fetch(u, { cache:'no-store' }).then((r) => {
-    if (!r.ok) throw new Error(String(r.status));
-    return r.json();
-  });
-
-  let ipoJob, gmpJob;
-  if (mode === 'server'){
-    ipoJob = json('api/ipos').then((d) => d.ipos);
-    gmpJob = json('api/gmp');
-  } else if (mode === 'static'){
-    ipoJob = json('data/ipos.json').then((d) => d.ipos);
-    gmpJob = Promise.all([
-      json('data/gmp.json'),
-      json('data/gmp-history.json').catch(() => ({})),
-    ]).then(([g, history]) => ({ gmp: g.gmp, history, fetchedAt: g.fetchedAt }));
-  } else {
-    ipoJob = fetchIposDirect();
-    gmpJob = fetchGmpDirect().then((gmp) => ({ gmp }));
-  }
-
-  const [ipoRes, gmpRes] = await Promise.allSettled([ipoJob, gmpJob]);
-
-  const age = gmpRes.status === 'fulfilled' && gmpRes.value?.fetchedAt
-    ? `updated ${relativeTime(gmpRes.value.fetchedAt)}` : '';
-
-  $('#mode').textContent = {
-    server: 'live via local server',
-    static: `published data · ${age}`,
-    proxy:  'no data source — using public proxies',
-  }[mode];
-
-  if (ipoRes.status === 'fulfilled' && ipoRes.value?.length){
-    state.ipos = ipoRes.value;
-    $('#src-ipo').textContent = `IPOs: ${state.ipos.length} from NSE · ${new Date().toLocaleTimeString()}`;
-    $('#src-ipo').classList.remove('err');
-  } else {
-    $('#src-ipo').textContent = 'IPOs: fetch failed';
-    $('#src-ipo').classList.add('err');
-  }
-
-  if (gmpRes.status === 'fulfilled' && gmpRes.value?.gmp?.length){
-    state.gmp = gmpRes.value.gmp;
-    if (gmpRes.value.history){
-      // Server-side history is the richer record; merge it over the local copy.
-      state.history = { ...state.history, ...gmpRes.value.history };
-    }
-    recordLocalHistory(state.gmp);
-    $('#src-gmp').textContent = `GMP: ${state.gmp.length} from IPO Watch · ${new Date().toLocaleTimeString()}`;
-    $('#src-gmp').classList.remove('err');
-  } else {
-    $('#src-gmp').textContent = 'GMP: fetch failed';
-    $('#src-gmp').classList.add('err');
-  }
-
-  const anyData = state.ipos.length || state.gmp.length;
-  if (anyData) save(LS.snapshot, { ipos: state.ipos, gmp: state.gmp, at: Date.now() });
-
-  showBanner(mode, ipoRes, gmpRes);
-  render();
-
-  btn.disabled = false;
-  btn.textContent = 'Refresh';
-}
-
-function showBanner(mode, ipoRes, gmpRes){
-  const failed = ipoRes.status !== 'fulfilled' || gmpRes.status !== 'fulfilled'
-              || !state.ipos.length || !state.gmp.length;
-  const el = $('#offline-banner');
-  if (!failed){ el.hidden = true; return; }
-  el.hidden = false;
-  el.innerHTML = {
-    server:
-      `<b>Some data did not load.</b> The server is running but an upstream
-       (NSE or IPO Watch) did not respond. Showing the last successful fetch —
-       try Refresh again in a minute.`,
-    static:
-      `<b>Published data is incomplete.</b> The scheduled fetch could not reach
-       one of the sources on its last run. It retries every 30 minutes.`,
-    proxy:
-      `<b>No data source available.</b> NSE and IPO Watch send no CORS headers,
-       so a page opened straight from disk has to route through public proxies
-       that are usually rate-limited or down. Run <code>node server.js</code>
-       in this folder and open <code>http://localhost:8787</code>, or use the
-       published site. Showing cached data meanwhile.`,
-  }[mode];
-}
-
-// ------------------------------------------------------------------ merging
-
-/** Join a GMP row to an IPO by normalised name, tolerating "Ltd"/short forms. */
-function gmpFor(ipo){
-  const key = nameKey(ipo.company || ipo.name);
-  if (!key) return null;
-  let best = null;
-  for (const g of state.gmp){
-    if (!g.key) continue;
-    if (g.key === key) return g;
-    if (key.startsWith(g.key) || g.key.startsWith(key)){
-      if (!best || g.key.length > best.key.length) best = g;
-    }
-  }
-  return best;
-}
-
-function classify(ipo){
-  const t = todayISO();
-  if (ipo.start && t < ipo.start) return 'upcoming';
-  if (ipo.end && t > ipo.end) return 'closed';
-  if (ipo.start && ipo.end) return 'open';
-  return 'upcoming';
-}
-
-/**
- * Unified list: NSE rows (mainboard, with subscription data) plus any SME or
- * mainboard IPO that only IPO Watch knows about.
- */
-function allIpos(){
-  const rows = state.ipos.map((ipo) => {
-    const g = gmpFor(ipo);
-    return {
-      key: nameKey(ipo.company),
-      name: ipo.company,
-      symbol: ipo.symbol,
-      board: ipo.board || 'Mainboard',
-      start: ipo.start, end: ipo.end,
-      listingDate: ipo.listingDate,
-      priceBand: ipo.priceBand,
-      issueSize: ipo.issueSize,
-      subscription: ipo.subscription,
-      gmp: g?.gmp ?? null,
-      trend: g?.trend ?? null,
-      estGainPct: g?.estGainPct ?? null,
-      price: g?.price ?? null,
-      hasNse: true,
-    };
-  });
-
-  const seen = new Set(rows.map((r) => r.key));
-  for (const g of state.gmp){
-    if (!g.key || seen.has(g.key)) continue;
-    if (rows.some((r) => r.key.startsWith(g.key) || g.key.startsWith(r.key))) continue;
-    const { start, end } = parseGmpDates(g.dates);
-    rows.push({
-      key: g.key, name: g.name, symbol: null, board: g.board,
-      start, end, priceBand: g.price ? '₹' + g.price : null,
-      issueSize: null, subscription: null,
-      gmp: g.gmp, trend: g.trend, estGainPct: g.estGainPct, price: g.price,
-      hasNse: false, statusHint: g.status,
-    });
-  }
-
-  return rows.map((r) => ({ ...r, status: r.start || r.end ? classify(r) : (r.statusHint || 'upcoming') }));
-}
-
-/** IPO Watch dates look like "28-1 September" or "20-24 August". */
-function parseGmpDates(s){
-  const m = String(s || '').match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s+([A-Za-z]+)/);
-  if (!m) return { start:null, end:null };
-  const mon = MONTHS[m[3].slice(0,3).toLowerCase()];
-  if (!mon) return { start:null, end:null };
-  const now = new Date();
-  let year = now.getFullYear();
-  // An end-month earlier than today's month means the window rolls into next year.
-  if (Number(mon) < now.getMonth() + 1 - 6) year += 1;
-  const end = `${year}-${mon}-${m[2].padStart(2,'0')}`;
-  const startDay = Number(m[1]);
-  // A start day greater than the end day means the window began the previous month.
-  let startMon = Number(mon), startYear = year;
-  if (startDay > Number(m[2])){
-    startMon -= 1;
-    if (startMon === 0){ startMon = 12; startYear -= 1; }
-  }
-  const start = `${startYear}-${String(startMon).padStart(2,'0')}-${String(startDay).padStart(2,'0')}`;
-  return { start, end };
-}
-
-// ------------------------------------------------------------------ sparkline
-
-function sparkline(key, w = 76, h = 22){
-  const pts = state.history[key]?.points || [];
-  if (pts.length < 2) return `<span style="font-size:11px;color:var(--faint)">collecting…</span>`;
-  const vals = pts.map((p) => p.gmp);
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const span = max - min || 1;
-  const step = (w - 2) / (vals.length - 1);
-  const d = vals.map((v,i) => `${(1 + i*step).toFixed(1)},${(h - 2 - ((v-min)/span)*(h-4)).toFixed(1)}`).join(' ');
-  const delta = vals[vals.length-1] - vals[0];
-  const col = delta > 0 ? 'var(--up)' : delta < 0 ? 'var(--down)' : 'var(--flat)';
-  const last = d.split(' ').pop().split(',');
-  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
-    <polyline points="${d}" fill="none" stroke="${col}" stroke-width="1.6"
-      stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${last[0]}" cy="${last[1]}" r="2" fill="${col}"/>
-  </svg>`;
-}
-
-/** GMP change since the first point recorded today (or the oldest we have). */
-function gmpChange(key){
-  const pts = state.history[key]?.points || [];
-  if (pts.length < 2) return null;
-  return pts[pts.length-1].gmp - pts[0].gmp;
-}
-
-// ------------------------------------------------------------------ rendering
-
-function matchesFilter(r){
-  if (state.board !== 'all' && r.board !== state.board) return false;
-  if (!state.search) return true;
-  const q = state.search.toLowerCase();
-  return String(r.name).toLowerCase().includes(q) ||
-         String(r.symbol || '').toLowerCase().includes(q);
-}
-
-function renderIpos(){
-  const rows = allIpos().filter(matchesFilter);
-  const t = todayISO();
-
-  const groups = [
-    { id:'open', label:'Open now', rows: rows.filter((r) => r.status === 'open')
-        .sort((a,b) => (a.end || '').localeCompare(b.end || '')) },
-    { id:'upcoming', label:'Upcoming', rows: rows.filter((r) => r.status === 'upcoming')
-        .sort((a,b) => (a.start || '9').localeCompare(b.start || '9')) },
-    { id:'closed', label:'Recently closed', rows: rows.filter((r) =>
-          r.status === 'closed' && (!r.end || daysBetween(r.end, t) <= 45))
-        .sort((a,b) => (b.end || '').localeCompare(a.end || '')) },
-  ];
-
-  $('#ipo-groups').innerHTML = groups.map((g) => `
-    <div class="group-title">${g.label} <span class="count">${g.rows.length}</span></div>
-    ${g.rows.length
-      ? `<div class="cards">${g.rows.map((r) => card(r, g.id, t)).join('')}</div>`
-      : `<div class="empty">Nothing here right now.</div>`}
-  `).join('');
-}
-
-function card(r, group, t){
-  const gmpCls = r.gmp > 0 ? 'up' : r.gmp < 0 ? 'down' : 'flat';
-  const closesIn = group === 'open' && r.end ? daysBetween(t, r.end) : null;
-  const opensIn  = group === 'upcoming' && r.start ? daysBetween(t, r.start) : null;
-
-  const timing =
-    closesIn !== null
-      ? (closesIn === 0 ? '<b class="down">closes today</b>'
-        : closesIn === 1 ? 'closes tomorrow' : `closes in ${closesIn} days`)
-    : opensIn !== null
-      ? (opensIn === 0 ? 'opens today' : opensIn === 1 ? 'opens tomorrow' : `opens in ${opensIn} days`)
-    : r.end ? `closed ${daysBetween(r.end, t)} days ago` : '';
-
-  const size = crore(r.issueSize);
-
-  return `<article class="card ${group}">
-    <h3>${esc(r.name)} ${r.board === 'SME' ? '<span class="tag">SME</span>' : ''}</h3>
-    <div class="sub">${r.symbol ? esc(r.symbol) + ' · ' : ''}${timing}</div>
-    <dl class="kv">
-      <dt>Dates</dt><dd>${fmtDate(r.start)} – ${fmtDate(r.end)}</dd>
-      <dt>Price band</dt><dd>${esc(r.priceBand || '—')}</dd>
-      ${size ? `<dt>Shares offered</dt><dd>${size.toLocaleString('en-IN')}</dd>` : ''}
-      ${r.subscription != null
-        ? `<dt>Subscribed</dt><dd><b>${r.subscription.toFixed(2)}×</b></dd>` : ''}
-      ${r.listingDate ? `<dt>Listing</dt><dd>${fmtDate(r.listingDate)}</dd>` : ''}
-    </dl>
-    <div class="gmpline">
-      <span class="gmpval ${gmpCls}">${r.gmp === null ? '—' : money(r.gmp)}</span>
-      <span class="gain">GMP${r.estGainPct != null ? ` · est. ${r.estGainPct > 0 ? '+' : ''}${r.estGainPct}%` : ''}</span>
-      ${sparkline(r.key)}
-    </div>
-    <div class="links">
-      ${r.symbol ? `<a href="https://www.nseindia.com/market-data/issue-information?symbol=${encodeURIComponent(r.symbol)}&series=EQ&type=Active" target="_blank" rel="noopener">NSE ↗</a>` : ''}
-      <a href="https://www.google.com/search?q=${encodeURIComponent(r.name + ' IPO RHP details')}" target="_blank" rel="noopener">Details ↗</a>
-      ${group === 'closed' ? `<a href="https://www.bseindia.com/investors/appli_check.aspx" target="_blank" rel="noopener">Allotment ↗</a>` : ''}
-    </div>
-  </article>`;
-}
-
-function renderGmp(){
-  const rows = state.gmp
-    .filter((g) => state.board === 'all' || g.board === state.board)
-    .map((g) => ({ ...g, change: gmpChange(g.key) }));
-
-  const { col, dir } = state.gmpSort;
-  rows.sort((a,b) => {
-    const av = a[col], bv = b[col];
-    if (av === null || av === undefined) return 1;
-    if (bv === null || bv === undefined) return -1;
-    return (typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv))) * dir;
-  });
-
-  $('#gmp-table tbody').innerHTML = rows.map((g) => {
-    const cls = g.gmp > 0 ? 'up' : g.gmp < 0 ? 'down' : 'flat';
-    const ch = g.change;
-    return `<tr>
-      <td>${esc(g.name)}</td>
-      <td><span class="tag">${g.board}</span></td>
-      <td>${esc(g.status || '—')}</td>
-      <td class="num">${money(g.price)}</td>
-      <td class="num ${cls}"><b>${money(g.gmp)}</b></td>
-      <td class="num">${g.estGainPct != null ? (g.estGainPct > 0 ? '+' : '') + g.estGainPct + '%' : '—'}</td>
-      <td class="num ${ch > 0 ? 'up' : ch < 0 ? 'down' : ''}">${
-        ch === null ? '—' : (ch > 0 ? '+' : '') + ch}</td>
-      <td>${sparkline(g.key)}</td>
-      <td>${esc(g.dates || '—')}</td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="9" class="empty">No GMP data loaded.</td></tr>`;
-}
-
-// ------------------------------------------------------------------ allotment
-
-const REGISTRARS = [
-  { name:'MUFG Intime (Link Intime)', url:'https://in.mpms.mufg.com/Initial_Offer/public-issues.html' },
-  { name:'KFin Technologies',          url:'https://kosmic.kfintech.com/ipostatus/' },
-  { name:'Bigshare Services',          url:'https://ipo.bigshareonline.com/ipo_status.html' },
-  { name:'Maashitla Securities',       url:'https://maashitla.com/allotment-status/public-issues' },
-  { name:'Skyline Financial',          url:'https://www.skylinerta.com/ipo.php' },
-  { name:'Cameo Corporate',            url:'https://ipo.cameoindia.com/' },
-  { name:'Purva Sharegistry',          url:'https://www.purvashare.com/investor-service/ipo-query' },
-  { name:'Integrated Registry',        url:'https://kprism.integratedregistry.in/ipo.aspx' },
-  { name:'BSE (any issue)',            url:'https://www.bseindia.com/investors/appli_check.aspx' },
-];
-
-function getIds(){ return load(LS.ids, []); }
-function setIds(v){ save(LS.ids, v); }
-
-function renderIds(){
-  const ids = getIds();
-  $('#pan-list').innerHTML = ids.length
-    ? ids.map((id, i) => `<span class="pill">
-        <b>${esc(id.value)}</b> <small>${esc(id.label || '')}</small>
-        <button data-del="${i}" title="Remove">×</button></span>`).join('')
-    : `<span class="empty">No PANs or DP IDs saved yet. They stay in this browser only.</span>`;
-}
-
-function renderAllot(){
-  const t = todayISO();
-  const closed = allIpos()
-    .filter((r) => r.status === 'closed' && (!r.end || daysBetween(r.end, t) <= 45))
-    .sort((a,b) => (b.end || '').localeCompare(a.end || ''));
-
-  $('#allot-count').textContent = closed.length;
-  const ids = getIds();
-
-  const picked = load(LS.registrars, {});
-
-  $('#allot-table tbody').innerHTML = closed.map((r, ri) => `
-    <tr>
-      <td>${esc(r.name)} ${r.board === 'SME' ? '<span class="tag">SME</span>' : ''}</td>
-      <td>${fmtDate(r.end)}</td>
-      <td>
-        <select data-reg="${ri}" data-key="${esc(r.key)}">
-          ${REGISTRARS.map((x, i) =>
-            `<option value="${i}"${picked[r.key] === i ? ' selected' : ''}>${esc(x.name)}</option>`
-          ).join('')}
-        </select>
-      </td>
-      <td>${ids.length
-        ? ids.map((id, ii) =>
-            `<button data-check="${ri}" data-id="${ii}">${esc(id.label || id.value)}</button>`
-          ).join(' ')
-        : '<span class="empty" style="padding:0">Add a PAN above</span>'}</td>
-    </tr>`).join('') ||
-    `<tr><td colspan="4" class="empty">No recently closed IPOs.</td></tr>`;
-}
-
-async function copyText(text){
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch {}
-    ta.remove();
-    return ok;
-  }
-}
-
-// ------------------------------------------------------------------ wiring
-
-function render(){
-  renderIpos();
-  renderGmp();
-  renderIds();
-  renderAllot();
-}
-
-const TABS = ['ipos','gmp','allot'];
-
-function showTab(name){
-  if (!TABS.includes(name)) name = 'ipos';
-  $$('.tabs button').forEach((x) => x.classList.toggle('on', x.dataset.tab === name));
-  TABS.forEach((id) => { $('#tab-' + id).hidden = (id !== name); });
-}
-
-$$('.tabs button').forEach((b) => b.addEventListener('click', () => {
-  location.hash = b.dataset.tab;
-  showTab(b.dataset.tab);
-}));
-
-window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
-
-$$('.board').forEach((b) => b.addEventListener('click', () => {
-  state.board = b.dataset.board;
-  $$('.board').forEach((x) => x.classList.toggle('on', x === b));
-  renderIpos();
-  renderGmp();
-}));
-
-$('#search').addEventListener('input', (e) => {
-  state.search = e.target.value.trim();
-  renderIpos();
-});
-
-$$('#gmp-table th[data-sort]').forEach((th) => th.addEventListener('click', () => {
-  const col = th.dataset.sort;
-  state.gmpSort = { col, dir: state.gmpSort.col === col ? -state.gmpSort.dir : -1 };
-  renderGmp();
-}));
-
-$('#refresh').addEventListener('click', refresh);
-
-$('#auto').addEventListener('click', (e) => {
-  if (state.autoTimer){
-    clearInterval(state.autoTimer);
-    state.autoTimer = null;
-    e.target.textContent = 'Auto-refresh: off';
-    e.target.classList.remove('on');
-  } else {
-    state.autoTimer = setInterval(refresh, 5 * 60 * 1000);
-    e.target.textContent = 'Auto-refresh: 5 min';
-    e.target.classList.add('on');
-  }
-});
-
-$('#pan-add').addEventListener('click', () => {
-  const value = $('#pan-value').value.trim().toUpperCase();
-  const label = $('#pan-label').value.trim();
-  if (!value) { toast('Enter a PAN or DP ID'); return; }
-  const ids = getIds();
-  if (ids.some((x) => x.value === value)) { toast('Already saved'); return; }
-  ids.push({ label, value });
-  setIds(ids);
-  $('#pan-value').value = '';
-  $('#pan-label').value = '';
-  renderIds();
-  renderAllot();
-});
-
-$('#pan-value').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') $('#pan-add').click();
-});
-
-// Registrars stay the same for a given IPO, so remember each pick.
-document.addEventListener('change', (e) => {
-  const sel = e.target.closest('select[data-reg]');
-  if (!sel) return;
-  const picked = load(LS.registrars, {});
-  picked[sel.dataset.key] = Number(sel.value);
-  save(LS.registrars, picked);
-});
-
-document.addEventListener('click', async (e) => {
-  const del = e.target.closest('[data-del]');
-  if (del){
-    const ids = getIds();
-    ids.splice(Number(del.dataset.del), 1);
-    setIds(ids);
-    renderIds();
-    renderAllot();
-    return;
-  }
-
-  const chk = e.target.closest('[data-check]');
-  if (chk){
-    const id = getIds()[Number(chk.dataset.id)];
-    const sel = document.querySelector(`select[data-reg="${chk.dataset.check}"]`);
-    const reg = REGISTRARS[Number(sel.value)];
-    const ok = await copyText(id.value);
-    toast(ok ? `${id.value} copied — paste it at ${reg.name}` : `Opening ${reg.name}`);
-    window.open(reg.url, '_blank', 'noopener');
-  }
-});
-
-// ------------------------------------------------------------------ boot
-
-$('#today').textContent = new Date().toLocaleDateString('en-IN',
-  { weekday:'short', day:'numeric', month:'short' });
-
-state.history = load(LS.history, {});
-const snap = load(LS.snapshot, null);
-if (snap){
-  state.ipos = snap.ipos || [];
-  state.gmp = snap.gmp || [];
-  $('#src-ipo').textContent = `IPOs: cached`;
-  $('#src-gmp').textContent = `GMP: cached`;
-}
-showTab(location.hash.slice(1));
-render();
-refresh();
-
-})();
-</script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

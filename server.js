@@ -104,7 +104,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/ipos') {
-      const ipos = await cached('ipos', 60_000, sources.getIpos);
+      const ipos = await cached('ipos', 60_000, sources.getIposEnriched);
       return sendJson(res, 200, { ok: true, fetchedAt: new Date().toISOString(), ipos });
     }
 

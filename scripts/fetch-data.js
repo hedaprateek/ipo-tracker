@@ -39,15 +39,17 @@ function writeJson(file, value) {
 
 (async () => {
   const [iposRes, gmpRes] = await Promise.allSettled([
-    sources.getIpos(),
+    sources.getIposEnriched(),
     sources.getGmp(),
   ]);
 
   let ok = 0;
 
   if (iposRes.status === 'fulfilled' && iposRes.value.length) {
-    writeJson('ipos.json', { ok: true, fetchedAt: now, ipos: iposRes.value });
-    console.log(`ipos.json: ${iposRes.value.length} issues`);
+    const ipos = iposRes.value;
+    const withCats = ipos.filter((r) => r.categories?.length).length;
+    writeJson('ipos.json', { ok: true, fetchedAt: now, ipos });
+    console.log(`ipos.json: ${ipos.length} issues, ${withCats} with category bids`);
     ok++;
   } else {
     console.error('NSE failed:', iposRes.reason?.message || 'empty response');

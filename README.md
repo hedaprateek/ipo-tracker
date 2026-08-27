@@ -1,9 +1,12 @@
 # IPO Tracker
 
-Open, upcoming and recently closed IPOs (mainboard + SME), live GMP with a
-trend that builds itself, and a place to keep your PANs for allotment checks.
+Open, upcoming and recently closed IPOs (mainboard + SME), category-wise
+subscription, live GMP with a trend that builds itself, an apply-or-avoid read
+on each live issue, and a place to keep your PANs for allotment checks.
 
-Plain HTML and one small Node file. No build step, no dependencies, no accounts.
+Plain HTML, CSS and JavaScript with no build step and no framework. One small
+Node file serves it locally; a scheduled GitHub Action keeps the published copy
+fed.
 
 ## Use it
 
@@ -14,58 +17,74 @@ install. A GitHub Action refreshes the data every 30 minutes.
 
 ```
 cd IPO_Tracker
+npm install          # only needed for the AI reports
 node server.js
 ```
 
 Then open **http://localhost:8787**. Pass a port if 8787 is taken: `node server.js 9000`.
 
-You can also double-click `index.html`, but that has no data source and falls
-back to public CORS proxies that are usually down — see
-[How data reaches the page](#how-data-reaches-the-page).
-
 ## What each tab does
 
 **IPOs** — three groups: open now, upcoming, and closed in the last 45 days.
-Each card shows the dates, price band, live subscription multiple from NSE,
-current GMP and the estimated listing gain. Filter by name, or narrow to
-Mainboard / SME.
+Filter by name or symbol, board, or status; sort by closing date, GMP %,
+subscription or name. Click any card for the detail view.
 
-**GMP & Trend** — every IPO with a grey-market premium, sortable on any column.
-The *Change* column and the sparkline come from snapshots this app records
-itself, so they read "collecting…" on day one and fill in as you keep using it.
-Leave *Auto-refresh* on during an issue window to build a denser trend.
+**GMP & Trend** — every issue with a grey-market premium, sortable on any
+column, above a chart comparing the six liveliest issues over time. The chart
+plots GMP as a **percentage of issue price**, not rupees: a ₹335 premium on a
+₹429 share and a ₹50 premium on an ₹82 share are comparable returns, but on a
+rupee axis the cheaper issue is squashed flat. Click a legend name to hide a
+series.
 
 **My Applications** — your saved PANs and DP IDs, then one row per recently
-closed IPO. Pick the registrar once (it is remembered for that IPO) and click a
-name: the ID is copied to your clipboard and the registrar's page opens, so you
-only solve the CAPTCHA and paste.
+closed IPO. Pick the registrar once (it is remembered) and click a name: the ID
+is copied and the registrar's page opens.
 
-## Where the data comes from
+**IPO detail** (click any card) — headline stats, the apply-or-avoid report,
+subscription broken out by category, GMP history, and a one-click allotment
+check. Each detail view has its own link — `#ipo=<key>` — so a specific issue
+can be bookmarked or shared.
 
-| What | Source | Notes |
-|---|---|---|
-| Issue calendar, price band, subscription | NSE public APIs | Official. Subscription updates through the day. |
-| GMP, estimated listing gain, SME issues | ipowatch.in | Unofficial grey-market quotes. |
-| GMP history | this app | Written to `data/gmp-history.json`, one point per IPO per hour. |
+## Subscription by category
 
-## Honest limitations
+NSE publishes bids per investor category while an issue is live. The detail view
+charts them against a 1× reference line:
 
-**Allotment status cannot be automated.** Every registrar — MUFG Intime, KFin,
-Bigshare, Maashitla, Cameo and the rest — puts a CAPTCHA on allotment lookup,
-and BSE blocks scripted calls. No web page can check allotment for you, and any
-site claiming otherwise is making you re-enter the CAPTCHA anyway. This app
-removes the tedious part instead: it stores the IDs, picks the registrar, and
-copies the PAN so the lookup is one click plus one CAPTCHA.
+| Category | Who |
+|---|---|
+| QIB | Institutions. The strongest quality signal. |
+| bHNI | Non-institutional, bids above ₹10L |
+| sHNI | Non-institutional, bids ₹2L–₹10L |
+| Retail | Individual bids up to ₹2L |
+| Employee | Reserved employee quota, where one exists |
 
-**GMP is not a price.** It is an unofficial premium quoted by grey-market
-dealers, it is thinly traded, and it moves fast near listing. Treat it as
-sentiment, not as a forecast.
+A category with a **lower** multiple has **better** allotment odds, which is
+what the report's category recommendation is built on.
 
-**Trend needs time.** The sparkline shows only what this app has recorded. It is
-empty on first run by design — nobody publishes free historical GMP.
+## The apply-or-avoid report
 
-**Registrar is not auto-detected.** NSE does not publish it in the issue feed,
-so you choose it once per IPO from the dropdown.
+Each open or near-term issue gets a structured read: a verdict (apply / avoid /
+neutral) with confidence, a headline, the reasoning, points for and against,
+which category gives the best odds, a risk level, and what could change the
+call. It is generated by Claude Opus 5 from **only** the figures on this page —
+subscription multiples and GMP. It has no access to the RHP, company financials
+or peer valuations, and it says so.
+
+This is an automated reading of public market signals for your own research,
+not investment advice.
+
+**To enable it,** add an [Anthropic API key](https://console.anthropic.com/) as
+a repository secret named `ANTHROPIC_API_KEY` (Settings → Secrets and variables
+→ Actions → New repository secret). Without it everything else still works and
+the report section simply says it is not configured.
+
+**Cost.** Each IPO carries a fingerprint of the facts that would change the
+conclusion — status, GMP band, subscription bands. If nothing material moved,
+the stored report is reused and no request is made, so most of the 48 daily runs
+cost nothing. Only open and near-term issues are covered; closed ones are
+skipped because you cannot act on them. Expect a few cents a day in a busy IPO
+week. Run `node scripts/generate-reports.js` locally to see the token count and
+estimated cost of a run, or `--force` to regenerate everything.
 
 ## How data reaches the page
 
@@ -80,27 +99,76 @@ answers — the mode it picked is shown in the status bar.
 | `proxy` | `file://`, no server | Public CORS proxies. Usually rate-limited or down; shows a banner saying so. |
 
 The Action is [`.github/workflows/fetch-data.yml`](.github/workflows/fetch-data.yml).
-It runs `scripts/fetch-data.js` every 30 minutes and commits the result, which is
-also what accumulates `data/gmp-history.json` — so the trend on the published
-site is shared by everyone rather than rebuilt per browser. If only one upstream
-fails, the other still updates and the old file is left alone. Run it by hand
-from the Actions tab with **Run workflow**.
+It runs `scripts/fetch-data.js` every 30 minutes, then `scripts/generate-reports.js`,
+and commits the result — which is also what accumulates
+`data/gmp-history.json`, so the trend on the published site is shared by
+everyone rather than rebuilt per browser. If one upstream fails the other still
+updates and the old file is left alone. Run it by hand from the Actions tab with
+**Run workflow**.
 
-Both `server.js` and the fetch script share [`lib/sources.js`](lib/sources.js),
-so there is one place where the parsing lives.
+## Layout
+
+```
+index.html              markup
+styles.css              all styling, both themes
+js/charts.js            inline-SVG line and bar charts
+js/app.js               fetching, merging, filtering, rendering
+lib/sources.js          NSE + IPO Watch parsing, shared by server and Action
+lib/net.js              TLS / DNS workarounds
+server.js               local static server + same-origin proxy
+scripts/fetch-data.js   writes data/*.json
+scripts/generate-reports.js   writes data/reports.json
+```
+
+`lib/sources.js` is the single place upstream parsing lives, so `server.js` and
+the scheduled fetch cannot drift apart.
+
+## Charts
+
+Colours come from a categorical palette validated for colour-vision deficiency
+in both themes (adjacent-pair ΔE ≥ 8 in OKLab, contrast checked against the
+actual surfaces). Every chart has a table twin — the GMP table carries every
+value the comparison chart shows — so no value is reachable only by hovering.
+
+## Honest limitations
+
+**Allotment status cannot be automated.** Every registrar — MUFG Intime, KFin,
+Bigshare, Maashitla, Cameo and the rest — puts a CAPTCHA on allotment lookup,
+and BSE blocks scripted calls. No web page can check allotment for you. This app
+removes the tedious part instead: it stores the IDs, remembers the registrar,
+and copies the PAN so the lookup is one click plus one CAPTCHA.
+
+**GMP is not a price.** It is an unofficial premium quoted by grey-market
+dealers, thinly traded and easily manipulated. Treat it as sentiment.
+
+**Trend needs time.** The sparklines and charts show only what has been
+recorded. They are empty on first run by design — nobody publishes free
+historical GMP.
+
+**Category bids are live-only.** NSE publishes them while an issue is open and
+briefly after; upcoming issues show nothing until bidding starts.
+
+**Registrar is not auto-detected.** NSE does not publish it in the issue feed,
+so you choose it once per IPO.
+
+## Local environment notes
 
 If your machine runs TLS-inspecting security software (Kaspersky, Zscaler,
-Netskope), Node would normally reject every upstream with *"self-signed
-certificate in certificate chain"*. Both entry points re-launch themselves with
-`--use-system-ca` so they trust the same certificates Windows does. Needs Node
-22.15+ locally — check with `node --version`.
+Netskope), Node rejects every upstream with *"self-signed certificate in
+certificate chain"*. Both entry points re-launch themselves with
+`--use-system-ca` so they trust the same certificates Windows does — needs Node
+22.15+. `npm install` needs the same treatment:
+
+```
+NODE_OPTIONS="--use-system-ca" npm install
+```
 
 ## Your data
 
-PANs, DP IDs and registrar choices live in your browser's `localStorage`. They
-are never sent anywhere — not to the server, not to the repo, not to NSE or IPO
-Watch, and nothing personal is ever committed. They stay on whichever device you
-entered them on, and clearing site data removes them.
+PANs, DP IDs, registrar choices, theme and filters live in your browser's
+`localStorage`. They are never sent anywhere — not to the server, not to the
+repo, not to NSE, IPO Watch or Anthropic — and nothing personal is ever
+committed. They stay on whichever device you entered them on.
 
-`data/*.json` is committed on purpose — that is how the published site gets its
-data. It contains only public IPO and GMP figures.
+`data/*.json` is committed on purpose: that is how the published site gets its
+data. It contains only public IPO figures and the generated reports.
