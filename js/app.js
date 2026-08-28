@@ -13,6 +13,7 @@ const LS = {
   theme: 'ipotracker.theme',
   filters: 'ipotracker.filters',
   range: 'ipotracker.range',
+  aiTarget: 'ipotracker.aitarget',
 };
 
 const state = {
@@ -652,6 +653,164 @@ function card(r, t){
   </article>`;
 }
 
+// ------------------------------------------------------------- today tab
+
+function renderToday(){
+  const t = todayISO();
+  const rows = allIpos()
+    .filter((r) => r.status === 'open')
+    .sort((a, b) => {
+      // Closing today comes first — that is the decision that expires.
+      const ad = a.end ? daysBetween(t, a.end) : 99;
+      const bd = b.end ? daysBetween(t, b.end) : 99;
+      if (ad !== bd) return ad - bd;
+      return (b.gmpPct ?? -1) - (a.gmpPct ?? -1);
+    });
+
+  const closingToday = rows.filter((r) => r.end === t).length;
+  $('#today-title').textContent = `Today · ${fmtDate(t)}`;
+  $('#today-sub').textContent = rows.length
+    ? `${rows.length} IPO${rows.length === 1 ? '' : 's'} open for application` +
+      (closingToday ? ` · ${closingToday} clos${closingToday === 1 ? 'es' : 'e'} today` : '')
+    : 'No IPOs are open for application right now.';
+
+  const target = load(LS.aiTarget, 'google');
+  $('#today-actions').innerHTML = rows.length
+    ? `<select id="ai-target" aria-label="Which AI to open">${
+        AI_TARGETS.map((a) =>
+          `<option value="${a.id}" ${a.id === target ? 'selected' : ''}>${a.label}</option>`).join('')
+      }</select>
+      <button class="primary" data-ai="all">Ask about all ${rows.length}</button>
+      <button data-copy="all">Copy details</button>`
+    : '';
+
+  if (!rows.length){
+    $('#today-list').innerHTML =
+      `<div class="empty">Nothing is open today. The IPOs tab lists what is coming up.</div>`;
+    return;
+  }
+
+  $('#today-list').innerHTML = rows.map((r) => todayCard(r, t)).join('');
+}
+
+function todayCard(r, t){
+  const opts = categoryOptions(r);
+  const rec = recommendCategory(r);
+  const hasTimes = opts.some((o) => o.times !== null);
+  // Fewest applications is the closest thing to best odds when NSE gives no
+  // multiple — it ignores quota size, so it is a hint, not a calculation.
+  // Retail, sHNI and bHNI only — the three an individual can choose between.
+  const totalApps = opts.reduce((n, o) => n + (o.applications || 0), 0);
+  const best = hasTimes
+    ? opts.filter((o) => o.times !== null)
+        .reduce((a, b) => (a === null || b.times < a.times ? b : a), null)
+    : null;
+  const days = r.end ? daysBetween(t, r.end) : null;
+
+  const urgency = days === 0 ? 'closes today'
+    : days === 1 ? 'closes tomorrow'
+    : `closes in ${days} days`;
+
+  return `<article class="today-card ${days === 0 ? 'urgent' : ''}" data-key="${esc(r.key)}">
+    <div class="today-card-head">
+      <div class="grow">
+        <h3>${esc(r.name)} ${r.board === 'SME' ? '<span class="tag">SME</span>' : ''}</h3>
+        <div class="sub">
+          <span class="${days === 0 ? 'urgent' : ''}">${urgency}</span>
+          · ${esc(r.priceBand || 'band not announced')}
+          ${r.subscription != null ? ` · ${r.subscription.toFixed(2)}× overall` : ''}
+          ${r.gmp !== null ? ` · GMP ${money(r.gmp)}${r.gmpPct !== null ? ` (${signed(r.gmpPct)})` : ''}` : ''}
+        </div>
+      </div>
+      ${r.report ? verdictChip(r.report) : ''}
+    </div>
+
+    ${rec ? `<div class="verdict-line">
+      <span class="pick">Apply under <b>${esc(rec.pick.label)}</b></span>
+      <span class="why">${esc(rec.why)}</span>
+    </div>` : `<div class="verdict-line">
+      <span class="why">${esc(noRecReason(r, opts))}</span>
+    </div>`}
+
+    ${opts.length ? `<table class="cat-table">
+      <thead><tr><th>Category</th><th>Minimum</th>
+        <th>${hasTimes ? 'Subscribed' : 'Applications'}</th>
+        <th>${hasTimes ? 'Odds of a lot' : 'Share of applicants'}</th></tr></thead>
+      <tbody>${opts.map((o) => `
+        <tr class="${best && o.key === best.key ? 'best' : ''}">
+          <td>${esc(o.label)}</td>
+          <td>${inr(o.amount)}<span class="lots"> · ${o.lots} lot${o.lots === 1 ? '' : 's'}</span></td>
+          <td>${hasTimes
+            ? (o.times === null ? '—' : o.times.toFixed(2) + '×')
+            : (o.applications === null ? '—' : o.applications.toLocaleString('en-IN'))}</td>
+          <td>${hasTimes
+            ? (o.times === null ? '—'
+               : o.times <= 1 ? 'full allotment likely'
+               : `about 1 in ${o.times.toFixed(1)}`)
+            : (o.applications === null || !totalApps ? '—'
+               : `${((o.applications / totalApps) * 100).toFixed(1)}% of applicants`)}</td>
+        </tr>`).join('')}</tbody>
+    </table>` : ''}
+
+    <div class="row today-row">
+      <button data-ai="${esc(r.key)}">Ask AI about this IPO</button>
+      <button data-copy="${esc(r.key)}">Copy details</button>
+      <button data-open="${esc(r.key)}">Full detail</button>
+    </div>
+  </article>`;
+}
+
+/** Why no category could be recommended — the reasons are quite different. */
+function noRecReason(r, opts){
+  if (!opts.length){
+    return r.info?.lotSize
+      ? 'Price band not announced yet, so the per-category amounts cannot be worked out.'
+      : 'Lot size not published yet, so the per-category amounts cannot be worked out.';
+  }
+  if (!r.categories?.length){
+    return 'Category-wise bids are not published yet — they appear once bidding is under way.';
+  }
+  return 'NSE publishes no per-category subscription multiple for SME issues, so the ' +
+         'odds cannot be calculated. The application counts below are the best guide.';
+}
+
+/** The rows a Today action applies to: one IPO, or every open one. */
+function todayRows(which){
+  const open = allIpos().filter((r) => r.status === 'open');
+  return which === 'all' ? open : open.filter((r) => r.key === which);
+}
+
+// Browsers and servers start truncating URLs somewhere past 8KB. The brief
+// carries every live figure, so on a busy day it can approach that — send the
+// clipboard instead of a URL that would arrive cut in half.
+const MAX_URL_PROMPT = 6000;
+
+function openAiWith(rows){
+  if (!rows.length) return;
+  const prompt = aiPrompt(rows);
+  const target = AI_TARGETS.find((x) => x.id === load(LS.aiTarget, 'google')) || AI_TARGETS[0];
+
+  // Always copy: it is the reliable path, and the fallback if the site drops
+  // the query parameter.
+  const copied = navigator.clipboard?.writeText(prompt)
+    .then(() => true).catch(() => false) ?? Promise.resolve(false);
+
+  const tooLong = prompt.length > MAX_URL_PROMPT;
+  window.open(tooLong ? target.blank : target.url(prompt), '_blank', 'noopener');
+
+  copied.then((ok) => {
+    if (tooLong){
+      toast(ok
+        ? `${rows.length} IPOs is too much for a URL — prompt copied, paste it into ${target.label}`
+        : `Too long for a URL and the clipboard was blocked — use Copy details`);
+    } else {
+      toast(ok
+        ? `Opened ${target.label} — prompt also copied, paste if it arrives empty`
+        : `Opened ${target.label}`);
+    }
+  });
+}
+
 // --------------------------------------------------------------- GMP tab
 
 function renderGmp(){
@@ -884,6 +1043,158 @@ function docLinks(r){
       `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>`).join('')}</dd>
   </div>`;
 }
+
+// ----------------------------------------------------------- today's IPOs
+
+const RETAIL_CAP = 200000;   // above this an application stops being retail
+const SHNI_CAP  = 1000000;   // above this it is big-HNI
+
+/**
+ * What it costs to apply in each category, and the odds of being allotted.
+ *
+ * The category boundaries are rupee thresholds, but you bid in whole lots, so
+ * the real minimum for sHNI is the first lot count that clears ₹2L — not ₹2L
+ * itself. Odds are the category's own subscription multiple: once a category
+ * is oversubscribed, allotment is a lottery, so 3x subscribed is about a one
+ * in three chance of a single lot.
+ */
+function categoryOptions(r){
+  const cap = capPrice(r);
+  const lot = r.info?.lotSize;
+  if (!cap || !lot) return [];
+
+  const perLot = cap * lot;
+  const sub = (k) => (r.categories || []).find((c) => c.key === k) || null;
+
+  return [
+    { key:'retail', label:'Retail',            lots: 1 },
+    { key:'shni',   label:'sHNI (₹2L–₹10L)',   lots: Math.ceil(RETAIL_CAP / perLot) },
+    { key:'bhni',   label:'bHNI (above ₹10L)', lots: Math.ceil(SHNI_CAP  / perLot) },
+  ].map((o) => {
+    const s = sub(o.key);
+    return {
+      ...o,
+      amount: o.lots * perLot,
+      times: s ? s.times : null,
+      // SME issues publish no per-category multiple — only how many people
+      // applied. See the shape note in lib/sources.js.
+      applications: s ? s.applications : null,
+    };
+  });
+}
+
+/**
+ * Which category to apply under, argued from the numbers rather than guessed.
+ *
+ * Retail is the default because it is the cheapest way in and the only one
+ * most people will use. It is only worth naming a bigger category when its
+ * odds are materially better — a marginal edge does not justify five times
+ * the money at risk.
+ */
+function recommendCategory(r){
+  const opts = categoryOptions(r).filter((o) => o.times !== null);
+  if (!opts.length) return null;
+
+  const retail = opts.find((o) => o.key === 'retail');
+  const best = opts.reduce((a, b) => (b.times < a.times ? b : a));
+
+  if (retail && retail.times <= 1){
+    return {
+      pick: retail,
+      why: `Retail is only ${retail.times.toFixed(2)}× subscribed, so a single ` +
+           `${inr(retail.amount)} application should be allotted in full.`,
+    };
+  }
+
+  if (!retail) return { pick: best, why: `${best.label} has the lowest subscription at ${best.times.toFixed(2)}×.` };
+
+  // Materially better means roughly half the crowding, not a rounding error.
+  if (best.key !== 'retail' && best.times < retail.times * 0.6){
+    return {
+      pick: best,
+      why: `${best.label} is ${best.times.toFixed(2)}× against retail's ${retail.times.toFixed(2)}×, ` +
+           `so the odds are better — but it needs ${inr(best.amount)} versus ${inr(retail.amount)}.`,
+      alt: retail,
+    };
+  }
+
+  return {
+    pick: retail,
+    why: best.key === 'retail'
+      ? `Retail has the lowest subscription at ${retail.times.toFixed(2)}×, and the smallest cheque at ${inr(retail.amount)}.`
+      : `Retail at ${retail.times.toFixed(2)}× is not meaningfully worse than ${best.label} at ${best.times.toFixed(2)}×, ` +
+        `and needs ${inr(retail.amount)} instead of ${inr(best.amount)}.`,
+  };
+}
+
+/**
+ * A self-contained question for an external AI. It carries the live figures,
+ * because no chatbot has today's subscription numbers — without them the
+ * answer would be generic.
+ */
+function aiPrompt(rows){
+  const t = todayISO();
+  const lines = [
+    `I am a retail investor in India deciding which IPOs to apply for today (${fmtDate(t)}).`,
+    `Here are the issues currently open, with live figures from NSE and IPO Watch.`,
+    `Application categories: Retail up to ₹2,00,000, sHNI ₹2,00,000–₹10,00,000, bHNI above ₹10,00,000.`,
+    '',
+  ];
+
+  for (const r of rows){
+    lines.push(`## ${r.name}${r.board === 'SME' ? ' (SME)' : ''}`);
+    lines.push(`- Closes: ${fmtDate(r.end)}${r.end === t ? ' (today)' : ''}`);
+    lines.push(`- Price band: ${r.priceBand || 'not announced'}`);
+    if (r.info?.lotSize){
+      const cap = capPrice(r);
+      lines.push(`- Lot size: ${r.info.lotSize} shares` +
+        (cap ? ` = ₹${(r.info.lotSize * cap).toLocaleString('en-IN')} per lot at the ₹${cap} cap` : ''));
+    }
+    if (r.issueSize && capPrice(r)){
+      lines.push(`- Total issue size: about ${inr(Number(r.issueSize) * capPrice(r))}`);
+    }
+    if (r.subscription != null) lines.push(`- Overall subscription: ${r.subscription.toFixed(2)}x`);
+    if (r.categories?.length){
+      lines.push('- Category-wise subscription:');
+      for (const c of r.categories){
+        lines.push(c.times !== null
+          ? `    - ${c.label}: ${c.times.toFixed(2)}x subscribed`
+          : `    - ${c.label}: ${(c.applications ?? 0).toLocaleString('en-IN')} applications` +
+            ' (NSE publishes no multiple for SME issues)');
+      }
+    } else {
+      lines.push('- Category-wise subscription: not published yet');
+    }
+    if (r.gmp !== null){
+      lines.push(`- Grey market premium: ₹${r.gmp}` +
+        (r.gmpPct !== null ? ` (${signed(r.gmpPct)} of issue price)` : '') +
+        ' — unofficial, treat as sentiment only');
+    } else {
+      lines.push('- Grey market premium: none quoted');
+    }
+    lines.push('');
+  }
+
+  lines.push(
+    'For each IPO tell me: should I apply or skip, and if I apply, which category gives',
+    'the best allotment odds for the money. Note that a category with a LOWER subscription',
+    'multiple has BETTER odds. Use only the figures above plus what you know about these',
+    'companies; say clearly when something is your own judgement rather than these numbers.',
+  );
+
+  return lines.join('\n');
+}
+
+// `udm=50` is Google's AI Mode. Each target also has a bare URL, used when the
+// brief is too long to travel in a query string.
+const AI_TARGETS = [
+  { id:'google', label:'Google AI Mode', blank: 'https://www.google.com/search?udm=50',
+    url: (q) => `https://www.google.com/search?udm=50&q=${encodeURIComponent(q)}` },
+  { id:'chatgpt', label:'ChatGPT', blank: 'https://chatgpt.com/',
+    url: (q) => `https://chatgpt.com/?q=${encodeURIComponent(q)}` },
+  { id:'claude', label:'Claude', blank: 'https://claude.ai/new',
+    url: (q) => `https://claude.ai/new?q=${encodeURIComponent(q)}` },
+];
 
 /**
  * Headline figures. A listed issue swaps the two speculative numbers — GMP and
@@ -1159,18 +1470,21 @@ async function copyText(text){
 // ---------------------------------------------------------------- wiring
 
 function render(){
+  renderToday();
   renderIpos();
   renderGmp();
   renderIds();
   renderAllot();
 }
 
-const TABS = ['ipos','gmp','allot'];
+const TABS = ['today','ipos','gmp','allot'];
 function showTab(name){
-  if (!TABS.includes(name)) name = 'ipos';
+  if (!TABS.includes(name)) name = 'today';
   $$('.tabs button').forEach((x) => x.classList.toggle('on', x.dataset.tab === name));
   TABS.forEach((id) => { $('#tab-'+id).hidden = (id !== name); });
-  $('#filter-row').hidden = (name === 'allot');
+  // Today and My Applications answer a fixed question; the filter row would
+  // only let you hide the very thing each is for.
+  $('#filter-row').hidden = (name === 'allot' || name === 'today');
   // Charts size to their container, so re-draw once the tab is actually visible.
   if (name === 'gmp') renderGmp();
 }
@@ -1288,6 +1602,36 @@ $('#compare-range').addEventListener('click', (e) => {
   if (!chip) return;
   setRange(chip.dataset.range);
   renderGmp();
+});
+
+// Today tab: ask an AI, or copy the same brief to paste anywhere.
+$('#tab-today').addEventListener('click', async (e) => {
+  const ai = e.target.closest('[data-ai]');
+  if (ai){
+    openAiWith(todayRows(ai.dataset.ai));
+    return;
+  }
+  const copy = e.target.closest('[data-copy]');
+  if (copy){
+    const rows = todayRows(copy.dataset.copy);
+    if (!rows.length) return;
+    try {
+      await navigator.clipboard.writeText(aiPrompt(rows));
+      toast('Details copied — paste into any AI chat');
+    } catch {
+      toast('Could not copy — the browser blocked clipboard access');
+    }
+    return;
+  }
+
+  // The document-level opener skips buttons, so this one is handled here.
+  const open = e.target.closest('button[data-open]');
+  if (open) location.hash = 'ipo=' + encodeURIComponent(open.dataset.open);
+});
+
+$('#tab-today').addEventListener('change', (e) => {
+  const sel = e.target.closest('#ai-target');
+  if (sel) save(LS.aiTarget, sel.value);
 });
 
 document.addEventListener('click', async (e) => {

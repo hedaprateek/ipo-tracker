@@ -25,6 +25,26 @@ Then open **http://localhost:8787**. Pass a port if 8787 is taken: `node server.
 
 ## What each tab does
 
+**Today** — the opening tab, and the only one that answers "what do I do now".
+Every issue open for application, sorted so whatever closes today comes first,
+each with the one thing you have to decide: **which category to apply under**.
+
+That question is answered from the numbers, not by a model. For each of Retail,
+sHNI and bHNI it shows what the minimum application actually costs — the first
+whole lot count that clears the category threshold, not the threshold itself —
+alongside the category's subscription multiple and the resulting odds. A
+category with a lower multiple has better odds, so the recommendation names the
+cheapest category whose odds are not materially worse. It only points you to a
+bigger category when the odds are roughly twice as good, since a marginal edge
+does not justify five times the money at risk.
+
+**Ask AI** hands the same brief to Google AI Mode, ChatGPT or Claude in a new
+tab, with every live figure embedded — no chatbot has today's subscription
+numbers, so without them the answer would be generic. The brief is copied to
+your clipboard at the same time; if it is too long to travel in a URL, the site
+opens blank and you paste. **Copy details** gives you the brief without opening
+anything.
+
 **IPOs** — three groups: open now, upcoming, and closed in the last 45 days.
 Filter by name or symbol, board, or status; sort by closing date, GMP %,
 subscription or name. Click any card for the detail view. Issues that have
@@ -61,7 +81,15 @@ charts them against a 1× reference line:
 | Employee | Reserved employee quota, where one exists |
 
 A category with a **lower** multiple has **better** allotment odds, which is
-what the report's category recommendation is built on.
+what the category recommendation on the Today tab is built on.
+
+**SME issues are different.** NSE returns a separate shape for them: shares bid
+and an application count per category, but no shares-offered and no
+subscription multiple — the `activeCat` block that would carry the multiples
+comes back all zeros. So SME rows show how many people applied in each category
+and what share of applicants that is, and say plainly that the odds cannot be
+calculated. SME issues also answer on their own `series=SME` and print "Lot
+Size" where mainboard prints "Bid Lot".
 
 ## The apply-or-avoid report
 

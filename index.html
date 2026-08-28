@@ -24,13 +24,26 @@
 </div>
 
 <div class="tabs">
-  <button data-tab="ipos" class="on">IPOs</button>
+  <button data-tab="today" class="on">Today</button>
+  <button data-tab="ipos">IPOs</button>
   <button data-tab="gmp">GMP &amp; Trend</button>
   <button data-tab="allot">My Applications</button>
 </div>
 
 <main>
   <div id="offline-banner" class="banner" hidden></div>
+
+  <!-- What can I actually act on today, and under which category. -->
+  <section id="tab-today">
+    <div class="today-head">
+      <div class="grow">
+        <h2 id="today-title">Today</h2>
+        <p id="today-sub" class="chart-note"></p>
+      </div>
+      <div class="row" id="today-actions"></div>
+    </div>
+    <div id="today-list"></div>
+  </section>
 
   <!-- One filter row scoping both the IPO and GMP views. -->
   <div class="filters" id="filter-row">
