@@ -1,7 +1,7 @@
 {
  "ok": true,
- "updatedAt": "2026-08-27T23:44:26.931Z",
- "provider": "gemini",
- "model": "Gemini (gemini-3.7-flash, free tier)",
+ "updatedAt": "2026-08-28T05:45:22.456Z",
+ "provider": null,
+ "model": null,
  "reports": {}
 }
