@@ -154,9 +154,16 @@ value the comparison chart shows — so no value is reachable only by hovering.
 All — shared by the GMP tab and the per-IPO chart, and remembered between
 visits. History accumulates one point per hour per IPO on each refresh, so a
 fresh install only has minutes of data and wants the short end, while a
-long-running issue is better read over days. If a window holds fewer than two
-readings the chart says so and suggests widening, rather than drawing a
-misleading flat line.
+long-running issue is better read over days.
+
+Ranges wider than the history actually held are **disabled**, with the recorded
+span shown beside them ("18h recorded"). With eighteen hours on file, 24h
+through 30d would every one of them redraw the identical line, and offering
+them as live choices makes the control look broken when nothing changes. Only
+windows that would show something different stay clickable, plus All. As
+history builds up the wider ranges switch themselves on. If a window holds
+fewer than two readings the chart says so and suggests widening, rather than
+drawing a misleading flat line.
 
 ## Honest limitations
 

@@ -368,6 +368,17 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
+/* A window wider than the history held would redraw the same line. */
+.chip.small[disabled] {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+.range-note {
+  align-self: center;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
 
 /* ------------------------------------------------------- decision figures */
 

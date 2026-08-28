@@ -432,13 +432,50 @@ function setRange(key){
   save(LS.range, key);
 }
 
-/** Render the segmented range control into a host element. */
-function renderRange(host){
+/** Milliseconds between the oldest and newest reading across some series. */
+function historySpan(pointLists){
+  let lo = Infinity, hi = -Infinity;
+  for (const pts of pointLists){
+    for (const p of pts){
+      if (p.t < lo) lo = p.t;
+      if (p.t > hi) hi = p.t;
+    }
+  }
+  return hi > lo ? hi - lo : 0;
+}
+
+function humanSpan(ms){
+  const hrs = ms / 3600e3;
+  if (hrs < 1) return `${Math.max(1, Math.round(ms / 60e3))} min`;
+  if (hrs < 48) return `${Math.round(hrs)}h`;
+  return `${Math.round(hrs / 24)} days`;
+}
+
+/**
+ * Render the range control, disabling windows wider than the history actually
+ * held. With eighteen hours recorded, 24h through 30d would all draw the exact
+ * same line — offering them as live choices makes the control look broken.
+ * "All" always stays available as the canonical everything option.
+ */
+function renderRange(host, span){
   if (!host) return;
-  host.innerHTML = RANGES.map((r) => `
-    <button class="chip small ${state.range === r.key ? 'on' : ''}"
-            data-range="${r.key}" aria-pressed="${state.range === r.key}">${r.label}</button>
-  `).join('');
+
+  const usable = (r) => r.key === 'all' || !span || r.ms < span;
+
+  // A disabled selection would strand the chart, so fall back to All.
+  const current = RANGES.find((r) => r.key === state.range);
+  if (current && !usable(current)) state.range = 'all';
+
+  host.innerHTML = RANGES.map((r) => {
+    const on = state.range === r.key;
+    const off = !usable(r);
+    return `<button class="chip small ${on ? 'on' : ''}" data-range="${r.key}"
+      aria-pressed="${on}" ${off ? 'disabled' : ''}
+      title="${off ? `Only ${humanSpan(span)} of history recorded so far` : `Last ${r.label}`}"
+      >${r.label}</button>`;
+  }).join('') + (span
+    ? `<span class="range-note">${humanSpan(span)} recorded</span>`
+    : '');
 }
 
 /**
@@ -629,7 +666,12 @@ function renderGmp(){
 /** Multi-series GMP-over-time comparison for the most active issues. */
 function renderCompareChart(rows){
   const wrap = $('#compare-chart');
-  renderRange($('#compare-range'));
+
+  // Span is measured over the unfiltered history, so the control can say which
+  // windows would show anything new.
+  renderRange($('#compare-range'), historySpan(
+    rows.filter((r) => r.status !== 'closed').map((r) => historyPoints(r.histKey))
+  ));
 
   const candidates = rows
     .filter((r) => r.status !== 'closed' && inRange(historyPoints(r.histKey)).length >= 2)
@@ -887,8 +929,9 @@ function openModal(key){
   renderFacts($('#modal-facts', back), r);
 
   const drawLine = () => {
-    renderRange($('#modal-range', back));
-    const pts = inRange(historyPoints(r.histKey));
+    const full = historyPoints(r.histKey);
+    renderRange($('#modal-range', back), historySpan([full]));
+    const pts = inRange(full);
     const host = $('#modal-line', back);
     if (pts.length < 2){
       host.innerHTML = `<p class="chart-empty">${
