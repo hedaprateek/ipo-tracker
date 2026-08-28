@@ -368,6 +368,7 @@ function allIpos(){
       subscription: ipo.subscription ?? null,
       categories: ipo.categories || null,
       info: ipo.info || null,
+      listing: ipo.listing || null,
       gmp: g?.gmp ?? null, trend: g?.trend ?? null,
       estGainPct: g?.estGainPct ?? null, price: g?.price ?? null,
       hasNse: true,
@@ -382,7 +383,7 @@ function allIpos(){
     rows.push({
       key:g.key, histKey:g.key, name:g.name, symbol:null, board:g.board, start, end,
       priceBand: g.price ? '₹'+g.price : null, issueSize:null,
-      subscription:null, categories:null, info:null,
+      subscription:null, categories:null, info:null, listing:null,
       gmp:g.gmp, trend:g.trend, estGainPct:g.estGainPct, price:g.price,
       hasNse:false, statusHint:g.status,
     });
@@ -603,8 +604,39 @@ function verdictChip(report){
   return `<span class="verdict-chip verdict-${esc(v)}">${label}</span>`;
 }
 
+const signed = (n, digits = 1) =>
+  `${n > 0 ? '+' : ''}${n.toFixed(digits)}%`;
+
+const moveClass = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
+
+/**
+ * The bottom line of a card. Once an issue has listed, its grey market premium
+ * is history — what matters is where it opened and where it trades now, so
+ * listed issues show that instead.
+ */
+function bottomLine(r){
+  const L = r.listing;
+  if (L && L.cmp !== null){
+    const gain = L.cmpGainPct;
+    return `<div class="gmpline">
+      <span class="gmpval ${gain === null ? 'flat' : moveClass(gain)}">${money(L.cmp)}</span>
+      <span class="gain">now${gain !== null ? ` · ${signed(gain)} vs issue` : ''}</span>
+      ${L.listGainPct !== null
+        ? `<span class="listpill ${moveClass(L.listGainPct)}"
+             title="Closing price on listing day versus the issue price"
+             >listed ${signed(L.listGainPct)}</span>`
+        : ''}
+    </div>`;
+  }
+  return `<div class="gmpline">
+    <span class="gmpval ${moveClass(r.gmp ?? 0)}">${r.gmp === null ? '—' : money(r.gmp)}</span>
+    <span class="gain">GMP${r.gmpPct !== null ? ` · ${signed(r.gmpPct)}` : ''}</span>
+    ${sparkline(r.histKey)}
+  </div>`;
+}
+
 function card(r, t){
-  const cls = r.gmp > 0 ? 'up' : r.gmp < 0 ? 'down' : 'flat';
+  const L = r.listing;
   return `<article class="card ${r.status}" tabindex="0" data-open="${esc(r.key)}">
     <h3>${esc(r.name)} ${r.board === 'SME' ? '<span class="tag">SME</span>' : ''}</h3>
     <div class="sub">${r.symbol ? esc(r.symbol)+' · ' : ''}${timingText(r, t)}</div>
@@ -613,12 +645,9 @@ function card(r, t){
       <dt>Price band</dt><dd>${esc(r.priceBand || '—')}</dd>
       ${r.subscription != null ? `<dt>Subscribed</dt><dd><b>${r.subscription.toFixed(2)}×</b></dd>` : ''}
       ${r.listingDate ? `<dt>Listing</dt><dd>${fmtDate(r.listingDate)}</dd>` : ''}
+      ${L && L.listPrice !== null ? `<dt>Listed at</dt><dd>${money(L.listPrice)}</dd>` : ''}
     </dl>
-    <div class="gmpline">
-      <span class="gmpval ${cls}">${r.gmp === null ? '—' : money(r.gmp)}</span>
-      <span class="gain">GMP${r.gmpPct !== null ? ` · ${r.gmpPct > 0 ? '+' : ''}${r.gmpPct.toFixed(1)}%` : ''}</span>
-      ${sparkline(r.histKey)}
-    </div>
+    ${bottomLine(r)}
     ${r.report ? `<div style="margin-top:9px">${verdictChip(r.report)}</div>` : ''}
   </article>`;
 }
@@ -790,9 +819,12 @@ function renderFacts(host, r){
     }
   }
 
-  if (lot && r.gmp !== null && r.gmp !== undefined){
-    const gain = lot * r.gmp;
-    add('Gain on one lot', inr(gain),
+  // Only meaningful before listing. Afterwards the realised figures below
+  // replace it — a GMP-derived projection for a share that already trades is
+  // just a stale guess sitting next to the real number.
+  const hasListed = !!(r.listing && r.listing.cmp !== null);
+  if (lot && !hasListed && r.gmp !== null && r.gmp !== undefined){
+    add('Gain on one lot', inr(lot * r.gmp),
       'at the current premium, if it lists there — GMP is not a forecast');
   }
 
@@ -804,6 +836,21 @@ function renderFacts(host, r){
       retail.times > 1
         ? `retail is ${retail.times.toFixed(2)}× subscribed`
         : `retail is only ${retail.times.toFixed(2)}× subscribed`);
+  }
+
+  // The listed price and current price are already the headline stats above,
+  // so this panel adds only what they do not say: the move since listing day,
+  // and what a single lot is now worth against what it cost.
+  const L = r.listing;
+  if (hasListed){
+    if (L.sinceListingPct !== null){
+      add('Since listing', signed(L.sinceListingPct),
+        L.listPrice !== null ? `from ${money(L.listPrice)} on listing day` : '');
+    }
+    if (lot && cap && L.cmpGainPct !== null){
+      add('One lot today', inr(lot * L.cmp),
+        `${signed(L.cmpGainPct)} on the ${inr(lot * cap)} one lot cost`);
+    }
   }
 
   add('Registrar', r.info?.registrar, 'handles allotment and refunds', true);
@@ -838,6 +885,38 @@ function docLinks(r){
   </div>`;
 }
 
+/**
+ * Headline figures. A listed issue swaps the two speculative numbers — GMP and
+ * the gain it implies — for the two real ones: what it opened at and what it
+ * trades at now.
+ */
+function modalStats(r){
+  const L = r.listing;
+  const band = `<div class="stat"><dt>Price band</dt>
+    <dd style="font-size:15px">${esc(r.priceBand || '—')}</dd></div>`;
+  const subs = `<div class="stat"><dt>Subscribed</dt><dd>${
+    r.subscription != null ? r.subscription.toFixed(2) + '×' : '—'}</dd></div>`;
+
+  if (L && L.cmp !== null){
+    return band + `
+      <div class="stat"><dt>Listed at</dt><dd>${
+        L.listPrice === null ? '—' : money(L.listPrice)}${
+        L.listGainPct !== null
+          ? ` <span class="delta ${moveClass(L.listGainPct)}">${signed(L.listGainPct)}</span>`
+          : ''}</dd></div>
+      <div class="stat"><dt>Trading now</dt><dd>${money(L.cmp)}${
+        L.cmpGainPct !== null
+          ? ` <span class="delta ${moveClass(L.cmpGainPct)}">${signed(L.cmpGainPct)}</span>`
+          : ''}</dd></div>` + subs;
+  }
+
+  return band + `
+    <div class="stat"><dt>GMP</dt><dd class="${moveClass(r.gmp ?? 0)}">${
+      r.gmp === null ? '—' : money(r.gmp)}</dd></div>
+    <div class="stat"><dt>Implied gain</dt><dd>${
+      r.gmpPct !== null ? signed(r.gmpPct) : '—'}</dd></div>` + subs;
+}
+
 function openModal(key){
   const r = allIpos().find((x) => x.key === key);
   if (!r) return;
@@ -856,15 +935,7 @@ function openModal(key){
         <button class="icon" data-close aria-label="Close">✕</button>
       </div>
       <div class="modal-body">
-        <div class="stat-row">
-          <div class="stat"><dt>Price band</dt><dd style="font-size:15px">${esc(r.priceBand || '—')}</dd></div>
-          <div class="stat"><dt>GMP</dt><dd class="${r.gmp>0?'up':r.gmp<0?'down':'flat'}">${
-            r.gmp === null ? '—' : money(r.gmp)}</dd></div>
-          <div class="stat"><dt>Implied gain</dt><dd>${
-            r.gmpPct !== null ? (r.gmpPct>0?'+':'')+r.gmpPct.toFixed(1)+'%' : '—'}</dd></div>
-          <div class="stat"><dt>Subscribed</dt><dd>${
-            r.subscription != null ? r.subscription.toFixed(2)+'×' : '—'}</dd></div>
-        </div>
+        <div class="stat-row">${modalStats(r)}</div>
 
         <div id="modal-report"></div>
 

@@ -27,7 +27,8 @@ Then open **http://localhost:8787**. Pass a port if 8787 is taken: `node server.
 
 **IPOs** — three groups: open now, upcoming, and closed in the last 45 days.
 Filter by name or symbol, board, or status; sort by closing date, GMP %,
-subscription or name. Click any card for the detail view.
+subscription or name. Click any card for the detail view. Issues that have
+already listed show their listing gain and current price in place of GMP.
 
 **GMP & Trend** — every issue with a grey-market premium, sortable on any
 column, above a chart comparing the six liveliest issues over time. The chart
@@ -41,9 +42,10 @@ closed IPO. Pick the registrar once (it is remembered) and click a name: the ID
 is copied and the registrar's page opens.
 
 **IPO detail** (click any card) — headline stats, the apply-or-avoid report,
-subscription broken out by category, GMP history, and a one-click allotment
-check. Each detail view has its own link — `#ipo=<key>` — so a specific issue
-can be bookmarked or shared.
+the figures a decision turns on (issue size, lot size, minimum application,
+allotment odds), subscription broken out by category, GMP history, and a
+one-click allotment check. Each detail view has its own link — `#ipo=<key>` —
+so a specific issue can be bookmarked or shared.
 
 ## Subscription by category
 
@@ -152,18 +154,35 @@ value the comparison chart shows — so no value is reachable only by hovering.
 
 **Time range.** The GMP charts have a range control — 6h, 24h, 3d, 7d, 30d,
 All — shared by the GMP tab and the per-IPO chart, and remembered between
-visits. History accumulates one point per hour per IPO on each refresh, so a
-fresh install only has minutes of data and wants the short end, while a
-long-running issue is better read over days.
+visits.
+
+History comes from two places. Each IPO's page on IPO Watch carries a
+day-by-day GMP table going back one to two weeks, and `fetch-data.js`
+**backfills** from it, so a fresh deploy starts with real history instead of
+nothing. On top of that the app records its own reading on every run, which is
+hourly rather than daily and keeps accruing past what IPO Watch retains.
+Backfilled days never displace a reading the app took itself.
 
 Ranges wider than the history actually held are **disabled**, with the recorded
-span shown beside them ("18h recorded"). With eighteen hours on file, 24h
-through 30d would every one of them redraw the identical line, and offering
-them as live choices makes the control look broken when nothing changes. Only
-windows that would show something different stay clickable, plus All. As
-history builds up the wider ranges switch themselves on. If a window holds
-fewer than two readings the chart says so and suggests widening, rather than
-drawing a misleading flat line.
+span shown beside them ("16 days recorded"). Offering a window that redraws the
+identical line makes the control look broken when nothing changes, so only
+windows that would show something different stay clickable, plus All. If a
+window holds fewer than two readings the chart says so and suggests widening,
+rather than drawing a misleading flat line.
+
+## After an IPO lists
+
+Grey market premium is a pre-listing guess; once shares trade it is worthless.
+Listed issues therefore drop GMP entirely and show what actually happened:
+
+- **Listed at** — closing price on listing day, and the gain against the issue price
+- **Trading now** — latest price, and the gain against the issue price
+- **Since listing** — whether it held its opening pop
+- **One lot today** — what a single lot is now worth against what it cost
+
+Prices come from Yahoo Finance (`SYMBOL.NS`), covering issues listed in the
+last 180 days. NSE's own quote endpoint refuses scripted access — it returns
+403 even after its cookie handshake — so it is not usable here.
 
 ## Honest limitations
 

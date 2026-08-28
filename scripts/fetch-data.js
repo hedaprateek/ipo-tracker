@@ -46,10 +46,17 @@ function writeJson(file, value) {
   let ok = 0;
 
   if (iposRes.status === 'fulfilled' && iposRes.value.length) {
+    // Categories, issue terms and listing prices are all attached by
+    // getIposEnriched, so the server and this script cannot drift apart.
     const ipos = iposRes.value;
     const withCats = ipos.filter((r) => r.categories?.length).length;
+    const withPrices = ipos.filter((r) => r.listing).length;
+
     writeJson('ipos.json', { ok: true, fetchedAt: now, ipos });
-    console.log(`ipos.json: ${ipos.length} issues, ${withCats} with category bids`);
+    console.log(
+      `ipos.json: ${ipos.length} issues, ${withCats} with category bids, ` +
+      `${withPrices} listed with prices`
+    );
     ok++;
   } else {
     console.error('NSE failed:', iposRes.reason?.message || 'empty response');
@@ -58,9 +65,19 @@ function writeJson(file, value) {
   if (gmpRes.status === 'fulfilled' && gmpRes.value.length) {
     writeJson('gmp.json', { ok: true, fetchedAt: now, gmp: gmpRes.value });
 
-    const history = sources.pruneHistory(
-      sources.recordHistory(readJson('gmp-history.json', {}), gmpRes.value, now)
-    );
+    let history = sources.recordHistory(readJson('gmp-history.json', {}), gmpRes.value, now);
+
+    // IPO Watch keeps one to two weeks of day-by-day GMP per IPO. This app can
+    // only ever observe the present, so without the backfill a fresh deploy
+    // shows a few hours of trend and the wider ranges have nothing to draw.
+    try {
+      const { added, touched } = await sources.backfillHistory(history, gmpRes.value);
+      if (added) console.log(`backfilled ${added} historical points across ${touched} IPOs`);
+    } catch (err) {
+      console.warn('backfill skipped:', err.message);
+    }
+
+    history = sources.pruneHistory(history);
     writeJson('gmp-history.json', history);
 
     const points = Object.values(history).reduce((n, s) => n + s.points.length, 0);

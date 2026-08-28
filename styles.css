@@ -380,6 +380,30 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   white-space: nowrap;
 }
 
+/* Realised listing-day move, shown beside the current price. */
+.listpill {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.listpill.up { color: var(--good); }
+.listpill.down { color: var(--critical); }
+.listpill.flat { color: var(--faint); }
+
+.stat .delta {
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.stat .delta.up { color: var(--good); }
+.stat .delta.down { color: var(--critical); }
+.stat .delta.flat { color: var(--faint); }
+
 /* ------------------------------------------------------- decision figures */
 
 .facts {
