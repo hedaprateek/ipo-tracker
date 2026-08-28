@@ -341,10 +341,82 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-size: 13px;
   font-weight: 650;
 }
-.chart-card > .chart-note {
+.chart-card > .chart-note,
+.chart-head .chart-note {
   margin: 0 0 10px;
   font-size: 12px;
   color: var(--faint);
+}
+
+/* Title on the left, range control on the right, stacking on narrow screens. */
+.chart-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.chart-head .grow { flex: 1 1 260px; min-width: 0; }
+
+.range {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.chip.small {
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------- decision figures */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.fact {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  min-width: 0;
+}
+.fact dt {
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fact dd {
+  margin: 3px 0 0;
+  font-size: 15px;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}
+/* Names and lists, not figures — normal weight so they do not shout over the
+   numbers they sit beside. */
+.fact-prose dd {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.fact-note {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--faint);
+  line-height: 1.35;
+}
+.fact-links { grid-column: 1 / -1; }
+.fact-links dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
 }
 
 .chart-wrap { position: relative; }

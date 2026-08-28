@@ -11,11 +11,13 @@
  * noise — an extra 0.2x of subscription, a ₹2 GMP tick — does not trigger a
  * regeneration, so a typical run costs nothing at all.
  *
- * Without ANTHROPIC_API_KEY this exits 0 and leaves any existing reports alone,
- * so the data pipeline still works for anyone without a key.
+ * Provider is chosen from whichever key is set — GEMINI_API_KEY (free tier) or
+ * ANTHROPIC_API_KEY — see lib/llm.js. With neither, this exits 0 and leaves any
+ * existing reports alone, so the data pipeline still works without a key.
  *
  *   node scripts/generate-reports.js
- *   node scripts/generate-reports.js --force    # ignore fingerprints
+ *   node scripts/generate-reports.js --force      # ignore fingerprints
+ *   node scripts/generate-reports.js --dry-run    # print a prompt, call nothing
  */
 
 const { relaunchWithSystemCa, preferIpv4 } = require('../lib/net');
@@ -25,10 +27,11 @@ preferIpv4();
 const fs = require('fs');
 const path = require('path');
 const { nameKey } = require('../lib/sources');
+const llm = require('../lib/llm');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const MODEL = 'claude-opus-5';
 const FORCE = process.argv.includes('--force');
+const DRY_RUN = process.argv.includes('--dry-run');
 const now = new Date().toISOString();
 
 function readJson(file, fallback) {
@@ -197,6 +200,20 @@ function withGmp(ipos, gmpRows) {
   });
 }
 
+/** Cap price of the band, the price an applicant actually bids at. */
+function capPrice(ipo) {
+  if (ipo.price) return ipo.price;
+  const nums = String(ipo.priceBand || '').replace(/,/g, '').match(/\d+(\.\d+)?/g);
+  return nums?.length ? Math.max(...nums.map(Number)) : null;
+}
+
+function inr(n) {
+  if (n === null || n === undefined) return null;
+  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)} crore`;
+  if (n >= 1e5) return `₹${(n / 1e5).toFixed(2)} lakh`;
+  return `₹${Math.round(n).toLocaleString('en-IN')}`;
+}
+
 function describe(ipo, history) {
   const lines = [
     `Company: ${ipo.company}`,
@@ -206,7 +223,35 @@ function describe(ipo, history) {
     `Price band: ${ipo.priceBand || 'not announced'}`,
   ];
 
-  if (ipo.issueSize) lines.push(`Shares offered: ${Number(ipo.issueSize).toLocaleString('en-IN')}`);
+  const cap = capPrice(ipo);
+  const lot = ipo.info?.lotSize || null;
+
+  if (ipo.issueSize) {
+    const shares = Number(ipo.issueSize);
+    const size = cap ? ` (about ${inr(shares * cap)} at the ₹${cap} cap price)` : '';
+    lines.push(`Total issue size: ${shares.toLocaleString('en-IN')} shares${size}`);
+  }
+
+  if (lot) {
+    const min = cap ? ` = ${inr(lot * cap)} minimum application` : '';
+    lines.push(`Lot size: ${lot} shares${min}`);
+  }
+  if (ipo.info?.faceValue) lines.push(`Face value: ₹${ipo.info.faceValue}`);
+  if (ipo.info?.issueType) lines.push(`Issue type: ${ipo.info.issueType}`);
+
+  // Retail allotment is a lottery once the category is oversubscribed, so the
+  // multiple is directly the odds of getting a single lot.
+  const retail = (ipo.categories || []).find((c) => c.key === 'retail');
+  if (retail && retail.times > 1) {
+    lines.push(
+      `Retail allotment odds: roughly 1 in ${retail.times.toFixed(1)} applications ` +
+      `get a lot, since retail is ${retail.times.toFixed(2)}x subscribed`
+    );
+  }
+
+  if (lot && ipo.gmp !== null && ipo.gmp !== undefined) {
+    lines.push(`Gain on one lot at the current GMP: ${inr(lot * ipo.gmp)}`);
+  }
 
   if (ipo.gmp !== null) {
     const pct = ipo.price ? ` (${((ipo.gmp / ipo.price) * 100).toFixed(1)}% of the ₹${ipo.price} cap price)` : '';
@@ -224,7 +269,11 @@ function describe(ipo, history) {
     );
   }
 
-  if (ipo.subscription !== null && ipo.subscription !== undefined) {
+  // A 0.00x on an issue that has not opened is an absence of data, not weak
+  // demand, and reads as the latter if passed through unqualified.
+  if (ipo.status === 'upcoming') {
+    lines.push('Overall subscription: bidding has not opened yet');
+  } else if (ipo.subscription !== null && ipo.subscription !== undefined) {
     lines.push(`Overall subscription: ${ipo.subscription.toFixed(2)}x`);
   }
 
@@ -269,93 +318,76 @@ function describe(ipo, history) {
   const live = new Set(merged.map((r) => r.key));
   for (const key of Object.keys(reports)) if (!live.has(key)) delete reports[key];
 
+  const provider = llm.pickProvider();
+  const label = provider ? llm.describeProvider(provider) : null;
+
+  const finish = () =>
+    writeJson('reports.json', {
+      ok: true, updatedAt: now, provider: provider || null, model: label, reports,
+    });
+
   if (!stale.length) {
     console.log('every report is current — no API calls needed');
-    writeJson('reports.json', { ok: true, updatedAt: now, model: MODEL, reports });
-    return;
+    return finish();
   }
 
   console.log(`${stale.length} need regenerating: ${stale.map((r) => r.symbol || r.name).join(', ')}`);
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.log('\nANTHROPIC_API_KEY is not set — skipping report generation.');
-    console.log('Add it as a repository secret to enable the apply/avoid reads.');
-    writeJson('reports.json', { ok: true, updatedAt: now, model: MODEL, reports });
+  if (DRY_RUN) {
+    console.log(`\n--- prompt for ${stale[0].symbol || stale[0].company} ---\n`);
+    console.log(describe(stale[0], history));
+    console.log('\n--- no request made (--dry-run) ---');
     return;
   }
 
-  let Anthropic;
-  try {
-    Anthropic = require('@anthropic-ai/sdk');
-  } catch {
-    console.error('@anthropic-ai/sdk is not installed — run: npm install');
-    process.exit(1);
+  if (!provider) {
+    console.log('\nNo model API key set — skipping report generation.');
+    console.log('Set GEMINI_API_KEY (free tier) or ANTHROPIC_API_KEY to enable the');
+    console.log('apply/avoid reads. Everything else still publishes without one.');
+    return finish();
   }
 
-  const client = new Anthropic();
+  console.log(`using ${label}\n`);
+
   let generated = 0;
-  let spent = { input: 0, output: 0 };
+  const spent = { input: 0, output: 0 };
 
   for (const ipo of stale) {
     try {
-      const response = await client.beta.messages.create({
-        model: MODEL,
-        max_tokens: 16000,
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
+      const result = await llm.complete(provider, {
         system: SYSTEM,
-        thinking: { type: 'adaptive' },
-        output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
-        messages: [
-          {
-            role: 'user',
-            content:
-              `Assess this IPO and decide whether it is worth applying to.\n\n${describe(ipo, history)}`,
-          },
-        ],
+        schema: REPORT_SCHEMA,
+        prompt: `Assess this IPO and decide whether it is worth applying to.\n\n${describe(ipo, history)}`,
       });
-
-      if (response.stop_reason === 'refusal') {
-        console.warn(`  ${ipo.symbol || ipo.name}: declined (${response.stop_details?.category})`);
-        continue;
-      }
-
-      const text = response.content.find((b) => b.type === 'text')?.text;
-      if (!text) {
-        console.warn(`  ${ipo.symbol || ipo.name}: no text block in response`);
-        continue;
-      }
 
       reports[ipo.key] = {
         name: ipo.company,
         symbol: ipo.symbol || null,
         fingerprint: fingerprint(ipo),
         generatedAt: now,
-        model: response.model,
-        report: JSON.parse(text),
+        model: result.model,
+        report: result.data,
       };
 
-      spent.input += response.usage.input_tokens || 0;
-      spent.output += response.usage.output_tokens || 0;
+      spent.input += result.usage.input;
+      spent.output += result.usage.output;
       generated++;
-      console.log(`  ${ipo.symbol || ipo.name}: ${reports[ipo.key].report.verdict}`);
+      console.log(`  ${ipo.symbol || ipo.name}: ${result.data.verdict}`);
     } catch (err) {
-      if (err instanceof Anthropic.AuthenticationError) {
-        console.error('ANTHROPIC_API_KEY is invalid — stopping.');
-        break;
-      }
-      if (err instanceof Anthropic.RateLimitError) {
-        console.error('rate limited — stopping, the next run will pick up the rest.');
+      if (err instanceof llm.FatalLlmError) {
+        console.error(`\n${err.message}`);
+        console.error('stopping — the next run picks up where this left off.');
         break;
       }
       console.error(`  ${ipo.symbol || ipo.name}: ${err.message}`);
     }
   }
 
-  writeJson('reports.json', { ok: true, updatedAt: now, model: MODEL, reports });
+  finish();
 
-  const cost = (spent.input * 5 + spent.output * 25) / 1e6;
+  const cost = llm.estimateCost(provider, spent);
+  const money = provider === 'gemini' ? 'free tier' : `~$${cost.toFixed(3)}`;
   console.log(
-    `\ngenerated ${generated} report(s) · ${spent.input} in / ${spent.output} out tokens · ~$${cost.toFixed(3)}`
+    `\ngenerated ${generated} report(s) · ${spent.input} in / ${spent.output} out tokens · ${money}`
   );
 })();

@@ -67,10 +67,16 @@
 
   <section id="tab-gmp" hidden>
     <div class="chart-card">
-      <h4>Grey market premium over time</h4>
-      <p class="chart-note">The six live issues with the highest premium, as a percentage of issue price so different price bands compare fairly. Click a name to hide it.
-        GMP is an unofficial grey-market quote, not an exchange price — the table below carries
-        every value shown here.</p>
+      <div class="chart-head">
+        <div class="grow">
+          <h4>Grey market premium over time</h4>
+          <p class="chart-note">The six live issues with the highest premium, as a percentage of
+            issue price so different price bands compare fairly. Click a name to hide it.
+            GMP is an unofficial grey-market quote, not an exchange price — the table below carries
+            every value shown here.</p>
+        </div>
+        <div class="range" id="compare-range" role="group" aria-label="Time range"></div>
+      </div>
       <div id="compare-chart"></div>
       <div class="legend" id="compare-legend"></div>
     </div>

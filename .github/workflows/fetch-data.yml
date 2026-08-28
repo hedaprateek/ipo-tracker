@@ -44,7 +44,11 @@ jobs:
       # a key the script exits 0 and the rest of the data still publishes.
       - name: Generate apply/avoid reports
         env:
+          # Whichever is set wins, Gemini first — it has a free tier.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          IPO_LLM_PROVIDER: ${{ vars.IPO_LLM_PROVIDER }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
         run: node scripts/generate-reports.js
         continue-on-error: true
 

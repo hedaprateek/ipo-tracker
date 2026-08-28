@@ -12,6 +12,7 @@ const LS = {
   registrars: 'ipotracker.registrars',
   theme: 'ipotracker.theme',
   filters: 'ipotracker.filters',
+  range: 'ipotracker.range',
 };
 
 const state = {
@@ -25,6 +26,7 @@ const state = {
   compareOff: new Set(),
   gmpSort: { col: 'gmpPct', dir: -1 },
   filters: { q: '', board: 'all', status: 'all', sort: 'closing' },
+  range: 'all',
 };
 
 const $ = (s, r) => (r || document).querySelector(s);
@@ -365,6 +367,7 @@ function allIpos(){
       priceBand: ipo.priceBand, issueSize: ipo.issueSize,
       subscription: ipo.subscription ?? null,
       categories: ipo.categories || null,
+      info: ipo.info || null,
       gmp: g?.gmp ?? null, trend: g?.trend ?? null,
       estGainPct: g?.estGainPct ?? null, price: g?.price ?? null,
       hasNse: true,
@@ -379,7 +382,7 @@ function allIpos(){
     rows.push({
       key:g.key, histKey:g.key, name:g.name, symbol:null, board:g.board, start, end,
       priceBand: g.price ? '₹'+g.price : null, issueSize:null,
-      subscription:null, categories:null,
+      subscription:null, categories:null, info:null,
       gmp:g.gmp, trend:g.trend, estGainPct:g.estGainPct, price:g.price,
       hasNse:false, statusHint:g.status,
     });
@@ -395,6 +398,48 @@ function allIpos(){
 }
 
 // ---------------------------------------------------------------- history
+
+// ------------------------------------------------------------ time ranges
+
+/**
+ * One control drives every GMP chart. Ranges run from hours to months because
+ * history accumulates on each refresh: a new install has only minutes of data
+ * and needs the short end, while a long-running issue wants the wide view.
+ */
+const RANGES = [
+  { key: '6h',  label: '6h',  ms: 6 * 3600e3 },
+  { key: '24h', label: '24h', ms: 24 * 3600e3 },
+  { key: '3d',  label: '3d',  ms: 3 * 86400e3 },
+  { key: '7d',  label: '7d',  ms: 7 * 86400e3 },
+  { key: '30d', label: '30d', ms: 30 * 86400e3 },
+  { key: 'all', label: 'All', ms: Infinity },
+];
+
+const rangeMs = (key) => (RANGES.find((r) => r.key === key) || RANGES[5]).ms;
+
+/** Trim a point series to the selected window. */
+function inRange(points, key){
+  const ms = rangeMs(key || state.range);
+  if (!Number.isFinite(ms)) return points;
+  const cutoff = Date.now() - ms;
+  return points.filter((p) => p.t >= cutoff);
+}
+
+/** One range applies everywhere, so switching it in the modal holds on the tab. */
+function setRange(key){
+  if (!RANGES.some((r) => r.key === key)) return;
+  state.range = key;
+  save(LS.range, key);
+}
+
+/** Render the segmented range control into a host element. */
+function renderRange(host){
+  if (!host) return;
+  host.innerHTML = RANGES.map((r) => `
+    <button class="chip small ${state.range === r.key ? 'on' : ''}"
+            data-range="${r.key}" aria-pressed="${state.range === r.key}">${r.label}</button>
+  `).join('');
+}
 
 /**
  * History is written under the IPO Watch name. Once an issue closes it drops
@@ -584,14 +629,23 @@ function renderGmp(){
 /** Multi-series GMP-over-time comparison for the most active issues. */
 function renderCompareChart(rows){
   const wrap = $('#compare-chart');
+  renderRange($('#compare-range'));
+
   const candidates = rows
-    .filter((r) => r.status !== 'closed' && historyPoints(r.histKey).length >= 2)
+    .filter((r) => r.status !== 'closed' && inRange(historyPoints(r.histKey)).length >= 2)
     .sort((a,b) => (b.gmpPct ?? -1) - (a.gmpPct ?? -1))
     .slice(0, 6);
 
   if (!candidates.length){
-    wrap.innerHTML = `<p class="chart-empty">Not enough history yet to compare —
-      each refresh adds a point. Come back after a few updates.</p>`;
+    // Distinguish "nothing recorded yet" from "nothing inside this window",
+    // since the fix for the second one is to widen the range.
+    const anyHistory = rows.some((r) => historyPoints(r.histKey).length >= 2);
+    wrap.innerHTML = anyHistory
+      ? `<p class="chart-empty">No readings in the last ${
+          RANGES.find((x) => x.key === state.range)?.label || 'window'
+        } — pick a wider range.</p>`
+      : `<p class="chart-empty">Not enough history yet to compare —
+         each refresh adds a point. Come back after a few updates.</p>`;
     $('#compare-legend').innerHTML = '';
     return;
   }
@@ -605,7 +659,8 @@ function renderCompareChart(rows){
     key: r.key,
     color: `var(--series-${(i % 6) + 1})`,
     points: r.price
-      ? historyPoints(r.histKey).map((p) => ({ t: p.t, v: Number(((p.v / r.price) * 100).toFixed(1)) }))
+      ? inRange(historyPoints(r.histKey))
+          .map((p) => ({ t: p.t, v: Number(((p.v / r.price) * 100).toFixed(1)) }))
       : [],
   })).filter((s) => s.points.length >= 2);
 
@@ -635,6 +690,111 @@ const REGISTRARS = [
 ];
 
 const CATEGORY_LABEL = { retail:'Retail', shni:'sHNI (₹2L–₹10L)', bhni:'bHNI (above ₹10L)', none:'—' };
+
+/** Cap of the price band — the price an applicant actually bids at. */
+function capPrice(r){
+  if (r.price) return r.price;
+  const nums = String(r.priceBand || '').replace(/,/g,'').match(/\d+(\.\d+)?/g);
+  return nums && nums.length ? Math.max(...nums.map(Number)) : null;
+}
+
+function inr(n){
+  if (n === null || n === undefined || !Number.isFinite(n)) return null;
+  if (n >= 1e7) return `₹${(n/1e7).toFixed(2)} cr`;
+  if (n >= 1e5) return `₹${(n/1e5).toFixed(2)} L`;
+  return '₹' + Math.round(n).toLocaleString('en-IN');
+}
+
+/**
+ * The concrete figures behind an apply decision: what one lot costs, what it
+ * would gain at the current premium, and the odds of actually being allotted.
+ * Everything here is derived from data already on the page — nothing new is
+ * fetched, and rows with no basis are left out rather than shown as em-dashes.
+ */
+function renderFacts(host, r){
+  if (!host) return;
+
+  const cap = capPrice(r);
+  const lot = r.info?.lotSize || null;
+  const shares = r.issueSize ? Number(r.issueSize) : null;
+  const retail = (r.categories || []).find((c) => c.key === 'retail');
+
+  const facts = [];
+  // `text: true` marks a prose value (a name, a list) so it does not wear the
+  // large bold treatment the numbers use.
+  const add = (label, value, note, text) => {
+    if (value) facts.push({ label, value, note, text });
+  };
+
+  add('Total issue size',
+    shares && cap ? inr(shares * cap) : null,
+    shares ? `${shares.toLocaleString('en-IN')} shares` +
+             (cap ? ` at the ₹${cap} cap price` : '') : '');
+
+  add('Lot size', lot ? `${lot} shares` : null,
+    r.info?.faceValue ? `face value ₹${r.info.faceValue}` : '');
+
+  add('Minimum application', lot && cap ? inr(lot * cap) : null, 'one lot at the cap price');
+
+  // Above ₹2L an application is no longer retail, so the lot count that keeps
+  // you inside the retail cap is a real decision the applicant makes.
+  if (lot && cap){
+    const perLot = lot * cap;
+    const maxRetail = r.info?.maxRetailAmount || 200000;
+    const lots = Math.floor(maxRetail / perLot);
+    if (lots >= 1){
+      add('Retail limit', `${lots} lot${lots === 1 ? '' : 's'}`,
+        `up to ${inr(lots * perLot)}, under the ${inr(maxRetail)} retail cap`);
+    }
+  }
+
+  if (lot && r.gmp !== null && r.gmp !== undefined){
+    const gain = lot * r.gmp;
+    add('Gain on one lot', inr(gain),
+      'at the current premium, if it lists there — GMP is not a forecast');
+  }
+
+  // Once a category is oversubscribed allotment is a lottery, so the multiple
+  // is directly the odds of a single application getting one lot.
+  if (retail){
+    add('Retail allotment odds',
+      retail.times > 1 ? `about 1 in ${retail.times.toFixed(1)}` : 'likely full allotment',
+      retail.times > 1
+        ? `retail is ${retail.times.toFixed(2)}× subscribed`
+        : `retail is only ${retail.times.toFixed(2)}× subscribed`);
+  }
+
+  add('Registrar', r.info?.registrar, 'handles allotment and refunds', true);
+  add('Lead managers', r.info?.leadManagers, '', true);
+
+  if (!facts.length){
+    host.innerHTML = `<p class="chart-empty">NSE has not published the issue terms yet.</p>`;
+    return;
+  }
+
+  host.innerHTML = facts.map((f) => `
+    <div class="fact${f.text ? ' fact-prose' : ''}">
+      <dt>${esc(f.label)}</dt>
+      <dd>${esc(f.value)}</dd>
+      ${f.note ? `<p class="fact-note">${esc(f.note)}</p>` : ''}
+    </div>`).join('') + docLinks(r);
+}
+
+/** Direct links to the official documents, when NSE published them. */
+function docLinks(r){
+  const links = [
+    ['Red herring prospectus', r.info?.rhpUrl],
+    ['Basis of issue price', r.info?.ratiosUrl],
+    ['Anchor allocation', r.info?.anchorUrl],
+  ].filter(([, u]) => u);
+
+  if (!links.length) return '';
+  return `<div class="fact fact-links">
+    <dt>Documents</dt>
+    <dd>${links.map(([label, url]) =>
+      `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>`).join('')}</dd>
+  </div>`;
+}
 
 function openModal(key){
   const r = allIpos().find((x) => x.key === key);
@@ -667,15 +827,26 @@ function openModal(key){
         <div id="modal-report"></div>
 
         <div class="chart-card">
+          <h4>The numbers that decide it</h4>
+          <p class="chart-note">What one application actually costs, and what it stands to make.</p>
+          <dl class="facts" id="modal-facts"></dl>
+        </div>
+
+        <div class="chart-card">
           <h4>Subscription by category</h4>
           <p class="chart-note">A category with a lower multiple has better allotment odds.</p>
           <div id="modal-bars"></div>
         </div>
 
         <div class="chart-card">
-          <h4>GMP over time</h4>
-          <p class="chart-note">Recorded by this app on each refresh. Grey market premium is an
-            unofficial indicator, not an exchange price.</p>
+          <div class="chart-head">
+            <div class="grow">
+              <h4>GMP over time</h4>
+              <p class="chart-note">Recorded by this app on each refresh. Grey market premium is an
+                unofficial indicator, not an exchange price.</p>
+            </div>
+            <div class="range" id="modal-range" role="group" aria-label="Time range"></div>
+          </div>
           <div id="modal-line"></div>
         </div>
 
@@ -713,9 +884,26 @@ function openModal(key){
       : 'NSE has not published category-wise bids for this issue.',
   });
 
-  Charts.lineChart($('#modal-line', back), [{
-    name: r.name, color: 'var(--series-1)', points: historyPoints(r.histKey),
-  }], { height: 200, prefix: '₹', area: true, ariaLabel: 'GMP over time' });
+  renderFacts($('#modal-facts', back), r);
+
+  const drawLine = () => {
+    renderRange($('#modal-range', back));
+    const pts = inRange(historyPoints(r.histKey));
+    const host = $('#modal-line', back);
+    if (pts.length < 2){
+      host.innerHTML = `<p class="chart-empty">${
+        historyPoints(r.histKey).length >= 2
+          ? 'No readings in this window — pick a wider range.'
+          : 'No history recorded yet. Points are captured each time the data refreshes.'
+      }</p>`;
+      return;
+    }
+    Charts.lineChart(host, [{
+      name: r.name, color: 'var(--series-1)', points: pts,
+    }], { height: 200, prefix: '₹', area: true, ariaLabel: 'GMP over time' });
+  };
+  drawLine();
+  back._drawLine = drawLine;
 
   renderModalAllot($('#modal-allot', back), r);
 
@@ -728,6 +916,12 @@ function openModal(key){
   const onKey = (e) => { if (e.key === 'Escape') close(); };
 
   back.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-range]');
+    if (chip){
+      setRange(chip.dataset.range);
+      drawLine();
+      return;
+    }
     if (e.target === back || e.target.closest('[data-close]')) close();
   });
   document.addEventListener('keydown', onKey);
@@ -739,7 +933,8 @@ function renderReport(host, r){
     host.innerHTML = `<div class="report">
       <div class="report-head"><h4>Apply or avoid</h4></div>
       <p class="chart-note" style="margin:0">No report for this IPO yet. Reports are generated for
-      open and near-term issues when an Anthropic API key is configured — see the README.</p>
+      open and near-term issues once a model API key is configured — Gemini has a free tier.
+      See the README.</p>
     </div>`;
     return;
   }
@@ -973,6 +1168,14 @@ document.addEventListener('change', (e) => {
   save(LS.registrars, picked);
 });
 
+// Range chips on the GMP tab. The modal handles its own, on its own subtree.
+$('#compare-range').addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-range]');
+  if (!chip) return;
+  setRange(chip.dataset.range);
+  renderGmp();
+});
+
 document.addEventListener('click', async (e) => {
   const del = e.target.closest('[data-del]');
   if (del){
@@ -1036,6 +1239,7 @@ $('#today').textContent = new Date().toLocaleDateString('en-IN',
 
 state.history = load(LS.history, {});
 state.filters = { ...state.filters, ...load(LS.filters, {}) };
+state.range = load(LS.range, state.range);
 syncFilterUI();
 
 const snap = load(LS.snapshot, null);
