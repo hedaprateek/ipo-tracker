@@ -303,6 +303,62 @@ code {
 
 .today-row { margin-top: 10px; }
 
+/* ------------------------------------------------------ comparison table */
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  min-width: 620px;
+}
+.compare-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 12px 6px 0;
+  white-space: nowrap;
+}
+.compare-table td {
+  padding: 7px 12px 7px 0;
+  border-top: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.compare-table td.name {
+  white-space: normal;
+  min-width: 170px;
+  font-weight: 600;
+}
+.compare-table tr.clickable { cursor: pointer; }
+.compare-table tr.clickable:hover td { background: var(--panel-2); }
+.compare-table td.urgent { color: var(--critical); font-weight: 650; }
+/* Dimmed, not hidden — an unaffordable issue is still worth seeing. */
+.compare-table tr.over-budget td { opacity: 0.45; }
+.compare-table .sub2 { color: var(--faint); font-size: 11.5px; }
+.compare-table .muted { color: var(--faint); font-style: italic; }
+
+.budget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.budget input {
+  width: 108px;
+  font-variant-numeric: tabular-nums;
+}
+.budget-note {
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--line-soft);
+}
+.budget-note b { color: var(--ink); }
+
 /* ---------------------------------------------------------------- cards */
 
 .cards {

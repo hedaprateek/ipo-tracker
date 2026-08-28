@@ -38,12 +38,28 @@ cheapest category whose odds are not materially worse. It only points you to a
 bigger category when the odds are roughly twice as good, since a marginal edge
 does not justify five times the money at risk.
 
-**Ask AI** hands the same brief to Google AI Mode, ChatGPT or Claude in a new
-tab, with every live figure embedded — no chatbot has today's subscription
-numbers, so without them the answer would be generic. The brief is copied to
-your clipboard at the same time; if it is too long to travel in a URL, the site
-opens blank and you paste. **Copy details** gives you the brief without opening
-anything.
+Above the cards, **all open issues sit side by side** in one table: what a
+retail application costs and the odds it buys, and separately the best-odds
+category with *its* own cost. Those are two columns rather than one because
+they answer different questions — an undersubscribed bHNI category genuinely
+has the better odds, but it needs ₹10L, and printing that category next to the
+₹15,000 retail figure would read as a ₹15,000 recommendation.
+
+Enter a **budget** and it works out how many applications that actually funds,
+naming them cheapest-first and showing what is left over.
+
+**Ask AI** hands the same figures to Google AI Mode, ChatGPT or Claude in a new
+tab, and asks for a **ranked comparison across all of them** — which to fund
+first on a given budget, which to skip and why — rather than a verdict on each
+in isolation. Every live figure is embedded, because no chatbot has today's
+subscription numbers and without them the answer is generic. The brief is
+copied to your clipboard at the same time; if it is too long to travel in a
+URL, the site opens blank and you paste. **Copy details** gives you the brief
+without opening anything.
+
+Issues that IPO Watch quotes but NSE's feed does not carry are marked *not in
+NSE's feed* rather than left blank — they have a GMP but no subscription or lot
+size to reason from.
 
 **IPOs** — three groups: open now, upcoming, and closed in the last 45 days.
 Filter by name or symbol, board, or status; sort by closing date, GMP %,

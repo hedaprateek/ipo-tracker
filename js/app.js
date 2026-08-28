@@ -14,6 +14,7 @@ const LS = {
   filters: 'ipotracker.filters',
   range: 'ipotracker.range',
   aiTarget: 'ipotracker.aitarget',
+  budget: 'ipotracker.budget',
 };
 
 const state = {
@@ -685,12 +686,122 @@ function renderToday(){
     : '';
 
   if (!rows.length){
+    $('#today-compare').innerHTML = '';
     $('#today-list').innerHTML =
       `<div class="empty">Nothing is open today. The IPOs tab lists what is coming up.</div>`;
     return;
   }
 
+  renderCompare(rows, t);
   $('#today-list').innerHTML = rows.map((r) => todayCard(r, t)).join('');
+}
+
+/**
+ * Every open issue side by side, which is the actual question when several are
+ * running at once: not "is this one good" but "which of these do I fund first".
+ * One row per IPO, carrying the cheapest way in and what that buys.
+ */
+function renderCompare(rows, t){
+  const budget = load(LS.budget, 0);
+
+  const items = rows.map((r) => {
+    const opts = categoryOptions(r);
+    const rec = recommendCategory(r);
+    const retail = opts.find((o) => o.key === 'retail') || null;
+    return { r, opts, rec, retail,
+      affordable: !budget || !retail || retail.amount <= budget };
+  });
+
+  $('#today-compare').innerHTML = `
+    <div class="chart-card">
+      <div class="chart-head">
+        <div class="grow">
+          <h4>All ${rows.length} side by side</h4>
+          <p class="chart-note">The cheapest way into each, and what that buys.
+            ${budget ? 'Rows beyond your budget are dimmed.' : ''}</p>
+        </div>
+        <label class="budget">Budget ₹
+          <input type="text" inputmode="numeric" id="budget" value="${budget || ''}"
+                 placeholder="e.g. 50000" aria-label="Total budget across applications" />
+        </label>
+      </div>
+      <div class="tablewrap">
+        <table class="compare-table">
+          <thead><tr>
+            <th>IPO</th><th>Closes</th>
+            <th>Retail application</th><th>Best odds</th><th>GMP</th>
+          </tr></thead>
+          <tbody>${items.map((it) => compareRow(it, t)).join('')}</tbody>
+        </table>
+      </div>
+      ${budget ? budgetNote(items, budget) : ''}
+    </div>`;
+}
+
+const odds = (times) =>
+  times === null ? '—'
+  : times <= 1 ? 'full allotment likely'
+  : `1 in ${times.toFixed(1)}`;
+
+/**
+ * One comparison row. Retail and the best-odds category are separate columns
+ * because they answer different questions, and each carries its own cost —
+ * naming a category beside somebody else's price tag is how a ₹10L bHNI
+ * recommendation ends up looking like a ₹15,000 one.
+ */
+function compareRow({ r, opts, rec, retail, affordable }, t){
+  const days = r.end ? daysBetween(t, r.end) : null;
+  const closes = days === null ? '—'
+    : days === 0 ? 'today' : days === 1 ? 'tomorrow' : `${days} days`;
+
+  // Rows sourced only from the GMP list have no NSE figures behind them.
+  const noData = !r.hasNse
+    ? 'not in NSE&rsquo;s feed'
+    : !opts.length ? 'terms not published' : null;
+
+  const best = rec && rec.pick.key !== 'retail' ? rec.pick : null;
+
+  return `<tr class="clickable ${affordable ? '' : 'over-budget'}" data-open="${esc(r.key)}">
+    <td class="name">${esc(r.name)}${r.board === 'SME' ? ' <span class="tag">SME</span>' : ''}</td>
+    <td class="${days === 0 ? 'urgent' : ''}">${closes}</td>
+    <td>${noData
+      ? `<span class="muted">${noData}</span>`
+      : retail
+        ? `${inr(retail.amount)}<span class="sub2"> · ${odds(retail.times)}</span>`
+        : '—'}</td>
+    <td>${noData ? '<span class="muted">—</span>'
+      : best
+        ? `<b>${esc(best.label.replace(/ \(.*\)/, ''))}</b> ${inr(best.amount)}<span class="sub2"> · ${odds(best.times)}</span>`
+        : `<span class="muted">retail is best</span>`}</td>
+    <td class="${r.gmpPct === null ? '' : moveClass(r.gmpPct)}">${
+      r.gmpPct === null ? '—' : signed(r.gmpPct)}</td>
+  </tr>`;
+}
+
+/** What the budget actually covers, cheapest-entry first. */
+function budgetNote(items, budget){
+  const affordable = items
+    .filter((i) => i.retail && i.retail.amount <= budget)
+    .sort((a, b) => a.retail.amount - b.retail.amount);
+
+  if (!affordable.length){
+    const cheapest = items.filter((i) => i.retail)
+      .sort((a, b) => a.retail.amount - b.retail.amount)[0];
+    return `<p class="chart-note budget-note">₹${budget.toLocaleString('en-IN')} does not cover
+      a single application here${cheapest ? ` — the cheapest is ${esc(cheapest.r.name)} at ${inr(cheapest.retail.amount)}` : ''}.</p>`;
+  }
+
+  // Greedy by cost: the most applications a fixed budget can actually fund.
+  let left = budget;
+  const fits = [];
+  for (const i of affordable){
+    if (i.retail.amount <= left){ fits.push(i); left -= i.retail.amount; }
+  }
+
+  return `<p class="chart-note budget-note">
+    ₹${budget.toLocaleString('en-IN')} funds <b>${fits.length}</b> retail application${fits.length === 1 ? '' : 's'}
+    at once — ${fits.map((i) => esc(i.r.name.replace(/ Limited$/, ''))).join(', ')}
+    — leaving ${inr(left)}. Applications are blocked, not debited, so money comes back on non-allotment.</p>`;
 }
 
 function todayCard(r, t){
@@ -1175,11 +1286,30 @@ function aiPrompt(rows){
     lines.push('');
   }
 
+  const budget = load(LS.budget, 0);
+  if (budget) lines.push(`My total budget across all applications is about ₹${budget.toLocaleString('en-IN')}.`, '');
+
+  // A per-IPO verdict is not the question when several are open at once. The
+  // real decision is which to fund first with limited money, so ask for a
+  // ranking and an allocation rather than N independent assessments.
   lines.push(
-    'For each IPO tell me: should I apply or skip, and if I apply, which category gives',
-    'the best allotment odds for the money. Note that a category with a LOWER subscription',
-    'multiple has BETTER odds. Use only the figures above plus what you know about these',
-    'companies; say clearly when something is your own judgement rather than these numbers.',
+    'Answer as a comparison across all of these, not one IPO at a time:',
+    '',
+    '1. A ranked table, best first, with these columns: IPO | Apply or skip | Which category',
+    '   | Minimum needed | Why (one short line). Rank on the strength of the case for applying,',
+    '   not on issue size.',
+    budget
+      ? `2. Given my ₹${budget.toLocaleString('en-IN')} budget, which applications should I actually fund, in what order, and what does that leave unfunded?`
+      : '2. If I can only fund two or three applications, which ones first, and why those?',
+    '3. Which of these should I skip outright, and what specifically makes them weak?',
+    '4. Anything in these numbers that looks like a warning sign worth pausing on.',
+    '',
+    'Rules for reading the figures: a category with a LOWER subscription multiple has BETTER',
+    'allotment odds, because allotment is a lottery once a category is oversubscribed. Retail',
+    'applies up to ₹2,00,000, sHNI ₹2,00,000-₹10,00,000, bHNI above ₹10,00,000. Grey market',
+    'premium is unofficial and easily manipulated - treat it as sentiment, never a forecast.',
+    'Use the figures above plus what you know about these companies, and say clearly which',
+    'parts are your own judgement rather than these numbers.',
   );
 
   return lines.join('\n');
@@ -1632,6 +1762,22 @@ $('#tab-today').addEventListener('click', async (e) => {
 $('#tab-today').addEventListener('change', (e) => {
   const sel = e.target.closest('#ai-target');
   if (sel) save(LS.aiTarget, sel.value);
+});
+
+// Budget re-renders the comparison, so debounce rather than redraw per keypress
+// — a redraw mid-typing would tear the input out from under the caret.
+let budgetTimer = null;
+$('#tab-today').addEventListener('input', (e) => {
+  const input = e.target.closest('#budget');
+  if (!input) return;
+  clearTimeout(budgetTimer);
+  budgetTimer = setTimeout(() => {
+    const n = Number(String(input.value).replace(/[^\d]/g, '')) || 0;
+    save(LS.budget, n);
+    renderToday();
+    const again = $('#budget');
+    if (again){ again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+  }, 600);
 });
 
 document.addEventListener('click', async (e) => {
