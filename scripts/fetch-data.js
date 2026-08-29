@@ -77,6 +77,21 @@ function writeJson(file, value) {
       console.warn('backfill skipped:', err.message);
     }
 
+    // The scorecard grades GMP against what the stock actually did on listing,
+    // which needs a premium recorded before the issue listed — a window this
+    // app missed for everything that concluded before it existed. IPO Watch
+    // keeps those pages up, so the record is reconstructed once per IPO and
+    // then skipped on every later run.
+    if (iposRes.status === 'fulfilled') {
+      try {
+        const listed = iposRes.value.filter((r) => r.listing && r.company);
+        const { added, touched } = await sources.backfillListedHistory(history, listed);
+        if (added) console.log(`recovered ${added} pre-listing points across ${touched} listed IPOs`);
+      } catch (err) {
+        console.warn('listed backfill skipped:', err.message);
+      }
+    }
+
     history = sources.pruneHistory(history);
     writeJson('gmp-history.json', history);
 

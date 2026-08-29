@@ -105,6 +105,33 @@
       <div class="legend" id="compare-legend"></div>
     </div>
 
+    <!-- What the premium is worth as a forecast. Sits between the trend and the
+         table so the qualification is read before the numbers it qualifies. -->
+    <section class="chart-card" id="scorecard" hidden>
+      <div class="chart-head">
+        <div>
+          <h4>Has the premium been right?</h4>
+          <p class="chart-note" id="scorecard-summary"></p>
+        </div>
+      </div>
+      <div class="stats" id="scorecard-stats"></div>
+      <div id="scorecard-chart"></div>
+      <details class="scorecard-detail">
+        <summary>Every graded issue<span class="chev" aria-hidden="true">›</span></summary>
+        <div class="tablewrap">
+          <table id="scorecard-table">
+            <thead><tr>
+              <th>IPO</th>
+              <th class="num">Premium said</th>
+              <th class="num">Listed at</th>
+              <th class="num">Miss</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+
     <div class="tablewrap">
       <table id="gmp-table">
         <thead><tr>

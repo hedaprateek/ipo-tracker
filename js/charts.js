@@ -376,6 +376,148 @@ function barChart(wrap, rows, opts) {
   }
 }
 
-global.Charts = { lineChart, barChart, ticks, fmtNum };
+// ------------------------------------------------------------- scatter chart
+
+/**
+ * points: [{ x, y, name }] — one dot per IPO, predicted against actual.
+ *
+ * The third form, because the question is a third shape: not change over time
+ * and not magnitude across categories, but whether two numbers agree. Both
+ * axes share one domain so the y=x reference sits at a true 45° and distance
+ * from it reads directly as error — squeezing the axes independently would
+ * make a badly calibrated forecast look well behaved.
+ */
+function scatterChart(wrap, points, opts) {
+  opts = opts || {};
+  wrap.textContent = '';
+  wrap.classList.add('chart-wrap');
+
+  const live = (points || []).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (!live.length) {
+    wrap.innerHTML = '<p class="chart-empty">Nothing graded yet.</p>';
+    return;
+  }
+
+  const W = opts.width || wrap.clientWidth || 640;
+  const H = opts.height || 260;
+  const padL = 44, padR = 14, padT = 12, padB = 34;
+  const plotW = Math.max(10, W - padL - padR);
+  const plotH = Math.max(10, H - padT - padB);
+
+  // One domain for both axes, always including zero so the sign of a miss is
+  // visible rather than cropped away.
+  const vals = live.flatMap((p) => [p.x, p.y]).concat(0);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.1 || 1;
+  lo -= pad; hi += pad;
+
+  const tk = ticks(lo, hi, 4);
+  lo = Math.min(lo, tk[0]);
+  hi = Math.max(hi, tk[tk.length - 1]);
+
+  const X = (v) => padL + ((v - lo) / (hi - lo)) * plotW;
+  const Y = (v) => padT + plotH - ((v - lo) / (hi - lo)) * plotH;
+  const fv = (v) => fmtNum(Number(v.toFixed(1))) + (opts.suffix || '');
+
+  const svg = el('svg', {
+    viewBox: `0 0 ${W} ${H}`, width: '100%', height: H,
+    role: 'img', 'aria-label': opts.ariaLabel || 'Scatter chart',
+  }, wrap);
+
+  for (const v of tk) {
+    el('line', {
+      x1: padL, x2: padL + plotW, y1: Y(v), y2: Y(v),
+      stroke: 'var(--chart-grid)', 'stroke-width': 1,
+    }, svg);
+    el('text', {
+      x: padL - 8, y: Y(v) + 4, 'text-anchor': 'end', class: 'chart-tick',
+    }, svg).textContent = fmtNum(v) + (opts.suffix || '');
+    el('text', {
+      x: X(v), y: H - 14, 'text-anchor': 'middle', class: 'chart-tick',
+    }, svg).textContent = fmtNum(v) + (opts.suffix || '');
+  }
+
+  // y = x: every dot on this line is a premium that called the gain exactly.
+  el('line', {
+    x1: X(lo), y1: Y(lo), x2: X(hi), y2: Y(hi),
+    stroke: 'var(--chart-ref)', 'stroke-width': 1.5,
+  }, svg);
+  // Parked in the lower-right triangle: a dot lands there only when the premium
+  // badly overstated a gain, which is the sparse corner. The line's own end is
+  // where the extremes sit, so a label there collides with them.
+  el('text', {
+    x: X(lo + (hi - lo) * 0.78), y: Y(lo + (hi - lo) * 0.28),
+    'text-anchor': 'middle', class: 'chart-reflabel',
+  }, svg).textContent = opts.referenceLabel || 'GMP exactly right';
+
+  el('text', {
+    x: padL + plotW / 2, y: H - 2, 'text-anchor': 'middle', class: 'chart-axislabel',
+  }, svg).textContent = opts.xLabel || 'predicted';
+  el('text', {
+    x: 10, y: padT + plotH / 2, 'text-anchor': 'middle', class: 'chart-axislabel',
+    transform: `rotate(-90 10 ${padT + plotH / 2})`,
+  }, svg).textContent = opts.yLabel || 'actual';
+
+  const tip = makeTooltip(wrap);
+
+  // One hue for every dot. Whether an issue beat its premium is already written
+  // in which side of the reference line it sits on, so spending colour on the
+  // same fact would double-encode it — and the obvious green/red pair is the
+  // one deuteranopes cannot separate (ΔE 4.1).
+  const color = opts.color || 'var(--series-1)';
+  for (const p of live) {
+    el('circle', {
+      cx: X(p.x), cy: Y(p.y), r: 4.5, fill: color,
+      stroke: 'var(--chart-surface)', 'stroke-width': 2, opacity: 0.9,
+    }, svg);
+  }
+
+  // Nearest-point layer rather than per-dot handlers: a 9px target is one you
+  // have to hit dead-centre, and dots overlap where issues priced alike.
+  const ring = el('circle', {
+    r: 8, fill: 'none', stroke: color, 'stroke-width': 2, opacity: 0,
+  }, svg);
+  const hit = el('rect', {
+    x: padL, y: padT, width: plotW, height: plotH, fill: 'transparent',
+  }, svg);
+
+  function move(clientX, clientY) {
+    const box = svg.getBoundingClientRect();
+    const px = ((clientX - box.left) / box.width) * W;
+    const py = ((clientY - box.top) / box.height) * H;
+
+    let best = null, bestD = Infinity;
+    for (const p of live) {
+      const d = (X(p.x) - px) ** 2 + (Y(p.y) - py) ** 2;
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    if (!best) return;
+
+    ring.setAttribute('cx', X(best.x));
+    ring.setAttribute('cy', Y(best.y));
+    ring.setAttribute('opacity', 1);
+
+    const beat = best.y >= best.x;
+    tip.show(
+      `<div class="tip-head">${best.name || ''}</div>` +
+      `<div class="tip-row"><span class="tip-name">${opts.xLabel || 'predicted'}</span><b>${fv(best.x)}</b></div>` +
+      `<div class="tip-row"><span class="tip-name">${opts.yLabel || 'actual'}</span><b>${fv(best.y)}</b></div>` +
+      `<div class="tip-note">${beat ? 'beat' : 'fell short of'} the premium by ${fv(Math.abs(best.y - best.x))}</div>`,
+      (X(best.x) / W) * wrap.clientWidth,
+      Y(best.y) * (wrap.clientHeight / H)
+    );
+  }
+
+  hit.addEventListener('mousemove', (e) => move(e.clientX, e.clientY));
+  hit.addEventListener('mouseleave', () => {
+    tip.hide();
+    ring.setAttribute('opacity', 0);
+  });
+  hit.addEventListener('touchmove', (e) => {
+    if (e.touches[0]) move(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+}
+
+global.Charts = { lineChart, barChart, scatterChart, ticks, fmtNum };
 
 })(window);

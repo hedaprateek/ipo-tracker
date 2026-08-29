@@ -579,6 +579,107 @@ function sparkline(key, w = 74, h = 22){
     <circle cx="${last[0]}" cy="${last[1]}" r="2" fill="${col}"/></svg>`;
 }
 
+// -------------------------------------------------------------- scorecard
+
+/**
+ * Grade the grey market against what the stock actually did.
+ *
+ * Every IPO site prints a premium; none says whether it worked. For each issue
+ * that has since listed, take the last premium recorded *before* listing day,
+ * express it as a percentage of what an applicant paid, and set it beside the
+ * real listing gain. The premium is a forecast, so this is simply its record.
+ *
+ * The reading must predate listing: once a stock trades, IPO Watch's number
+ * chases the market and grading it against the price would be circular.
+ */
+function gmpScorecard(rows){
+  const graded = [];
+
+  for (const r of rows){
+    const paid = r.listing?.issuePrice;
+    const actual = r.listing?.listGainPct;
+    if (!paid || actual === null || actual === undefined || !r.listingDate) continue;
+
+    const pre = (state.history[resolveHistKey(r.histKey)]?.points || [])
+      .filter((p) => p.t.slice(0, 10) < r.listingDate);
+    if (!pre.length) continue;
+
+    const predicted = (pre[pre.length - 1].gmp / paid) * 100;
+    graded.push({
+      name: r.name, key: r.key, listingDate: r.listingDate,
+      predicted, actual, error: actual - predicted,
+    });
+  }
+
+  if (!graded.length) return null;
+
+  graded.sort((a, b) => (b.listingDate || '').localeCompare(a.listingDate || ''));
+  const mean = (xs) => xs.reduce((s, v) => s + v, 0) / xs.length;
+  const errs = graded.map((g) => g.error);
+
+  return {
+    graded,
+    n: graded.length,
+    // Direction is the weaker claim and the one it gets right: did the premium
+    // at least know whether the issue would list up or down?
+    directionRight: graded.filter((g) => Math.sign(g.predicted) === Math.sign(g.actual)).length,
+    // Signed, so it reads as a lean: positive means listings beat the premium.
+    bias: mean(errs),
+    typicalMiss: mean(errs.map(Math.abs)),
+  };
+}
+
+function renderScorecard(rows){
+  const host = $('#scorecard');
+  if (!host) return;
+
+  const s = gmpScorecard(rows);
+  if (!s){
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+
+  const pct = Math.round((s.directionRight / s.n) * 100);
+  const leans = s.bias >= 0 ? 'understated' : 'overstated';
+
+  $('#scorecard-summary').innerHTML =
+    `Across the last <b>${s.n}</b> issues that have listed, the premium called the
+     direction right <b>${s.directionRight} times</b>, missing the actual gain by
+     <b>${s.typicalMiss.toFixed(0)} points</b> on average — and on balance it
+     <b>${leans}</b> what the stock went on to do.`;
+
+  $('#scorecard-stats').innerHTML = [
+    ['Direction right', `${pct}%`, `${s.directionRight} of ${s.n} listings`],
+    ['Typical miss', `${s.typicalMiss.toFixed(0)} pts`, 'average gap, either way'],
+    ['Lean', `${signed(s.bias)}`, `premium ${leans} the gain`],
+  ].map(([label, value, note]) => `
+    <div class="stat">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value">${value}</div>
+      <div class="stat-note">${note}</div>
+    </div>`).join('');
+
+  Charts.scatterChart($('#scorecard-chart'), s.graded.map((g) => ({
+    x: g.predicted, y: g.actual, name: g.name,
+  })), {
+    height: 260, suffix: '%',
+    xLabel: 'premium said', yLabel: 'actually listed at',
+    ariaLabel: 'Grey market premium against actual listing gain, one dot per IPO',
+  });
+
+  // The table twin: every dot readable as a number, worst misses first.
+  $('#scorecard-table tbody').innerHTML = [...s.graded]
+    .sort((a, b) => Math.abs(b.error) - Math.abs(a.error))
+    .map((g) => `
+      <tr>
+        <td class="name">${esc(g.name)}</td>
+        <td data-label="Premium said" class="num">${signed(g.predicted)}</td>
+        <td data-label="Listed at" class="num ${moveClass(g.actual)}">${signed(g.actual)}</td>
+        <td data-label="Miss" class="num">${signed(g.error)}</td>
+      </tr>`).join('');
+}
+
 // ---------------------------------------------------------------- filters
 
 function applyFilters(rows){
@@ -1022,6 +1123,9 @@ function renderGmp(){
     .map((r) => ({ ...r, change: gmpChange(r.histKey) }));
 
   renderCompareChart(rows);
+  // Graded over every issue on record, not the filtered set — the premium's
+  // track record is a property of the source, not of the current search box.
+  renderScorecard(allIpos());
 
   const { col, dir } = state.gmpSort;
   const sorted = [...rows].sort((a,b) => {
