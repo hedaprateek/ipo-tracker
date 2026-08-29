@@ -323,13 +323,24 @@ function gmpFor(name){
   return best;
 }
 
+/**
+ * Four states, not three. Between bidding closing and the shares listing sits
+ * a window of several days where allotment is decided and refunds go out —
+ * the one stretch where there is actually something to do — so it is its own
+ * state rather than being lumped in with issues that have already listed.
+ */
 function classify(r){
   const t = todayISO();
   if (r.start && t < r.start) return 'upcoming';
-  if (r.end && t > r.end) return 'closed';
+  if (r.end && t > r.end){
+    return (r.listingDate && r.listingDate <= t) ? 'listed' : 'pending';
+  }
   if (r.start && r.end) return 'open';
   return 'upcoming';
 }
+
+/** Anything past bidding, whether or not it has listed yet. */
+const isClosed = (r) => r.status === 'pending' || r.status === 'listed';
 
 function parseGmpDates(s){
   const m = String(s||'').match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s+([A-Za-z]+)/);
@@ -539,9 +550,15 @@ function applyFilters(rows){
   const f = state.filters;
   const q = f.q.toLowerCase();
 
+  // "Closed" is one choice in the filter row but two states behind it —
+  // awaiting listing, and listed — so it has to match both.
+  const statusMatches = (r) =>
+    f.status === 'all' ||
+    (f.status === 'closed' ? isClosed(r) : r.status === f.status);
+
   let out = rows.filter((r) => {
     if (f.board !== 'all' && r.board !== f.board) return false;
-    if (f.status !== 'all' && r.status !== f.status) return false;
+    if (!statusMatches(r)) return false;
     if (q && !String(r.name).toLowerCase().includes(q)
           && !String(r.symbol||'').toLowerCase().includes(q)) return false;
     return true;
@@ -560,25 +577,46 @@ function applyFilters(rows){
 
 // -------------------------------------------------------------- rendering
 
-function statusOrder(id){ return { open:0, upcoming:1, closed:2 }[id]; }
-
 function renderIpos(){
   const t = todayISO();
   const rows = applyFilters(allIpos());
+  const recent = (r) => !r.end || daysBetween(r.end, t) <= 45;
+
+  // Past events read newest-first: the issue that closed yesterday matters more
+  // than one that closed six weeks ago. Order by whichever date the card
+  // actually shows, so "listed 3 days ago" cannot appear above "listed
+  // yesterday". Only override the default sort — an explicit choice of GMP or
+  // subscription is the user's, so leave it alone.
+  const newestFirst = (list, key) => state.filters.sort === 'closing'
+    ? [...list].sort((a, b) => String(b[key] || '').localeCompare(String(a[key] || '')))
+    : list;
 
   const groups = [
-    { id:'open',     label:'Open now',        rows: rows.filter((r)=>r.status==='open') },
-    { id:'upcoming', label:'Upcoming',        rows: rows.filter((r)=>r.status==='upcoming') },
-    { id:'closed',   label:'Recently closed', rows: rows.filter((r)=>
-        r.status==='closed' && (!r.end || daysBetween(r.end,t) <= 45)) },
-  ].filter((g) => state.filters.status === 'all' || state.filters.status === g.id)
-   .sort((a,b) => statusOrder(a.id) - statusOrder(b.id));
+    { id:'open',     label:'Open now',
+      rows: rows.filter((r) => r.status === 'open') },
+    { id:'upcoming', label:'Upcoming',
+      rows: rows.filter((r) => r.status === 'upcoming') },
+    { id:'pending',  label:'Closed · awaiting listing',
+      note: 'Bidding is over and allotment is being decided. Check your allotment here.',
+      rows: newestFirst(rows.filter((r) => r.status === 'pending' && recent(r)), 'end') },
+    { id:'listed',   label:'Recently listed',
+      rows: newestFirst(rows.filter((r) => r.status === 'listed' && recent(r)), 'listingDate') },
+  ].filter((g) => {
+    if (state.filters.status === 'all') return true;
+    // The status filter still offers one "closed" choice, covering both.
+    if (state.filters.status === 'closed') return g.id === 'pending' || g.id === 'listed';
+    return state.filters.status === g.id;
+  });
 
   const total = groups.reduce((n,g) => n + g.rows.length, 0);
   $('#result-count').textContent = `${total} IPO${total===1?'':'s'}`;
 
-  $('#ipo-groups').innerHTML = groups.map((g) => `
+  // A group with nothing in it is noise unless it is the only one asked for.
+  const shown = groups.filter((g) => g.rows.length || groups.length === 1);
+
+  $('#ipo-groups').innerHTML = shown.map((g) => `
     <div class="group-title">${g.label} <span class="count">${g.rows.length}</span></div>
+    ${g.note && g.rows.length ? `<p class="group-note">${g.note}</p>` : ''}
     ${g.rows.length
       ? `<div class="cards">${g.rows.map((r) => card(r, t)).join('')}</div>`
       : `<div class="empty">Nothing matches these filters.</div>`}
@@ -595,6 +633,23 @@ function timingText(r, t){
   if (r.status === 'upcoming' && r.start){
     const d = daysBetween(t, r.start);
     return d <= 0 ? 'opens today' : d === 1 ? 'opens tomorrow' : `opens in ${d} days`;
+  }
+
+  if (r.status === 'pending'){
+    const ago = r.end ? daysBetween(r.end, t) : null;
+    const closed = ago === null ? 'closed'
+      : ago === 0 ? 'closed today' : ago === 1 ? 'closed yesterday' : `closed ${ago} days ago`;
+    if (r.listingDate){
+      const d = daysBetween(t, r.listingDate);
+      return `${closed} · <span class="await">lists ${
+        d === 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`}</span>`;
+    }
+    return `${closed} · <span class="await">listing date not announced</span>`;
+  }
+
+  if (r.status === 'listed' && r.listingDate){
+    const d = daysBetween(r.listingDate, t);
+    return d === 0 ? 'listed today' : d === 1 ? 'listed yesterday' : `listed ${d} days ago`;
   }
   return r.end ? `closed ${daysBetween(r.end, t)} days ago` : '';
 }
@@ -969,11 +1024,11 @@ function renderCompareChart(rows){
   // Span is measured over the unfiltered history, so the control can say which
   // windows would show anything new.
   renderRange($('#compare-range'), historySpan(
-    rows.filter((r) => r.status !== 'closed').map((r) => historyPoints(r.histKey))
+    rows.filter((r) => r.status !== 'listed').map((r) => historyPoints(r.histKey))
   ));
 
   const candidates = rows
-    .filter((r) => r.status !== 'closed' && inRange(historyPoints(r.histKey)).length >= 2)
+    .filter((r) => r.status !== 'listed' && inRange(historyPoints(r.histKey)).length >= 2)
     .sort((a,b) => (b.gmpPct ?? -1) - (a.gmpPct ?? -1))
     .slice(0, 6);
 
@@ -1564,7 +1619,7 @@ function renderIds(){
 function renderAllot(){
   const t = todayISO();
   const closed = allIpos()
-    .filter((r) => r.status === 'closed' && (!r.end || daysBetween(r.end,t) <= 45))
+    .filter((r) => isClosed(r) && (!r.end || daysBetween(r.end, t) <= 45))
     .sort((a,b) => String(b.end||'').localeCompare(String(a.end||'')));
 
   $('#allot-count').textContent = closed.length;

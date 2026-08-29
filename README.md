@@ -61,10 +61,19 @@ Issues that IPO Watch quotes but NSE's feed does not carry are marked *not in
 NSE's feed* rather than left blank — they have a GMP but no subscription or lot
 size to reason from.
 
-**IPOs** — three groups: open now, upcoming, and closed in the last 45 days.
-Filter by name or symbol, board, or status; sort by closing date, GMP %,
-subscription or name. Click any card for the detail view. Issues that have
-already listed show their listing gain and current price in place of GMP.
+**IPOs** — four groups: open now, upcoming, **closed · awaiting listing**, and
+recently listed (last 45 days). The gap between bidding closing and shares
+listing runs several days and is the one stretch where there is something to
+do — allotment is decided and refunds go out — so it is its own group rather
+than being folded in with issues that already trade. Those cards keep their
+GMP, which is still live, and carry the expected listing date.
+
+Both past groups read **newest first**, each ordered by the date its cards
+actually show: awaiting-listing by when bidding closed, recently-listed by when
+it listed. Filter by name or symbol, board, or status; sort by closing date,
+GMP %, subscription or name — an explicit sort choice is respected and only the
+default ordering is overridden. Click any card for the detail view. Issues that
+have already listed show their listing gain and current price in place of GMP.
 
 **GMP & Trend** — every issue with a grey-market premium, sortable on any
 column, above a chart comparing the six liveliest issues over time. The chart
