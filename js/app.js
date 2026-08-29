@@ -30,6 +30,7 @@ const state = {
   filters: { q: '', board: 'all', status: 'all', sort: 'closing' },
   range: 'all',
   loaded: false,
+  fundamentals: {},
 };
 
 const $ = (s, r) => (r || document).querySelector(s);
@@ -265,10 +266,12 @@ async function refresh(){
     gmpJob = fetchGmpDirect().then((gmp) => ({ gmp }));
   }
 
-  // Reports are optional everywhere — absence is not an error.
+  // Reports and fundamentals are optional everywhere — absence is not an error.
   const reportJob = json('data/reports.json').catch(() => null);
+  const fundJob = json('data/fundamentals.json').catch(() => null);
 
-  const [ipoRes, gmpRes, repRes] = await Promise.allSettled([ipoJob, gmpJob, reportJob]);
+  const [ipoRes, gmpRes, repRes, fundRes] =
+    await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob]);
 
   if (ipoRes.status === 'fulfilled' && ipoRes.value?.length){
     state.ipos = ipoRes.value;
@@ -292,6 +295,7 @@ async function refresh(){
     $('#src-gmp').classList.add('err');
   }
 
+  state.fundamentals = (fundRes.status === 'fulfilled' && fundRes.value) || {};
   state.reports = (repRes.status === 'fulfilled' && repRes.value?.reports) || {};
   const nReports = Object.keys(state.reports).length;
   $('#src-report').textContent = nReports
@@ -1338,6 +1342,131 @@ function renderFacts(host, r){
     </div>`).join('') + docLinks(r);
 }
 
+/**
+ * What the company reports, as against what the market feels.
+ *
+ * The premium and the subscription figures are both sentiment; this is the
+ * other half of an apply-or-avoid decision — what the business earns, what it
+ * is being sold for, and how that compares with companies already listed.
+ *
+ * Every figure is IPO Watch's transcription of the RHP. NSE publishes the same
+ * numbers only inside the prospectus and a "ratios" archive that holds scanned
+ * newspaper advertisements, so there is no cleaner machine-readable source.
+ */
+function renderFundamentals(host, r){
+  if (!host) return;
+  const f = state.fundamentals[r.key];
+  const card = host.closest('.chart-card');
+
+  if (!f){
+    if (card) card.hidden = true;
+    return;
+  }
+  if (card) card.hidden = false;
+
+  const k = f.kpis || {};
+  const cap = capPrice(r);
+  // IPO Watch leaves P/E as "N/A" because the issue has no market price yet.
+  // At the cap of the band it is simply price over earnings, and it is the one
+  // number that makes the peer column mean anything.
+  const pe = cap && k.eps > 0 ? cap / k.eps : null;
+
+  const peerPes = (f.peers || []).map((p) => p.pe).filter((v) => v > 0).sort((a, b) => a - b);
+  const peerNote = peerPes.length
+    ? `listed peers trade at ${peerPes[0].toFixed(0)}–${peerPes[peerPes.length-1].toFixed(0)}×`
+    : '';
+
+  const rows = [];
+  const add = (label, value, note) => { if (value !== null && value !== '') rows.push({ label, value, note }); };
+
+  add('P/E at the cap price', pe ? `${pe.toFixed(1)}×` : null,
+    pe && peerPes.length
+      ? `${pe < peerPes[Math.floor(peerPes.length/2)] ? 'below' : 'above'} the peer median — ${peerNote}`
+      : (k.eps > 0 ? `on earnings of ₹${k.eps.toFixed(2)} a share` : ''));
+  add('Return on net worth', k.ronw !== null && k.ronw !== undefined ? `${k.ronw.toFixed(1)}%` : null,
+    'what the company earns on shareholders’ money');
+  add('Return on equity', k.roe !== null && k.roe !== undefined ? `${k.roe.toFixed(1)}%` : null, '');
+  add('PAT margin', k.patMargin !== null && k.patMargin !== undefined ? `${k.patMargin.toFixed(1)}%` : null, '');
+  add('Debt to equity', k.debtEquity !== null && k.debtEquity !== undefined ? k.debtEquity.toFixed(2) : null,
+    k.debtEquity > 1 ? 'carries more debt than equity' : '');
+
+  // Revenue is the one line in the table that is signed correctly, so growth is
+  // computed from it rather than from profit.
+  const fin = (f.financials || []).filter((x) => x.revenue !== null);
+  const full = fin.filter((x) => /^\d{4}$/.test(x.period));
+  if (full.length >= 2){
+    const first = full[0], last = full[full.length - 1];
+    const yrs = full.length - 1;
+    const cagr = (Math.pow(last.revenue / first.revenue, 1 / yrs) - 1) * 100;
+    add('Revenue growth', `${signed(cagr)}`,
+      `a year, ${first.period} to ${last.period} (₹${first.revenue.toFixed(0)} → ₹${last.revenue.toFixed(0)} cr)`);
+  }
+
+  const losing = fin.filter((x) => x.spentMore).length;
+  const html = rows.map((x) => `
+    <div class="fact">
+      <dt>${esc(x.label)}</dt>
+      <dd>${esc(x.value)}</dd>
+      ${x.note ? `<p class="fact-note">${esc(x.note)}</p>` : ''}
+    </div>`).join('');
+
+  // The published profit column drops the sign on a loss, so a loss-making year
+  // reads as a fat profit. The sign cannot be recovered from the columns, so
+  // the fact is stated rather than the number silently corrected.
+  const warn = losing
+    ? `<p class="fact-warn">Spent more than it earned in ${losing === fin.length
+        ? 'every year shown' : `${losing} of the ${fin.length} periods shown`}.
+       The source prints profit without a minus sign, so treat the profit column
+       below as a magnitude, not a direction.</p>`
+    : '';
+
+  const table = fin.length ? `
+    <div class="tablewrap">
+      <table class="fin-table">
+        <thead><tr><th>Period</th><th class="num">Revenue</th><th class="num">Expense</th>
+          <th class="num">Profit</th><th class="num">Assets</th></tr></thead>
+        <tbody>${fin.map((x) => `
+          <tr${x.spentMore ? ' class="loss"' : ''}>
+            <td class="name">${esc(x.period)}</td>
+            <td data-label="Revenue" class="num">${x.revenue?.toFixed(2) ?? '—'}</td>
+            <td data-label="Expense" class="num">${x.expense?.toFixed(2) ?? '—'}</td>
+            <td data-label="Profit" class="num">${x.pat?.toFixed(2) ?? '—'}</td>
+            <td data-label="Assets" class="num">${x.assets?.toFixed(2) ?? '—'}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <p class="fact-note">₹ crore, as reported in the prospectus.</p>` : '';
+
+  const peers = (f.peers || []).length ? `
+    <div class="tablewrap">
+      <table class="fin-table">
+        <thead><tr><th>Listed peer</th><th class="num">P/E</th><th class="num">RoNW</th>
+          <th class="num">EPS</th></tr></thead>
+        <tbody>${f.peers.map((p) => `
+          <tr>
+            <td class="name">${esc(p.company)}</td>
+            <td data-label="P/E" class="num">${
+              p.pe === null ? '—'
+                : p.pe <= 0 ? '<span class="muted" title="the peer is loss-making">n/m</span>'
+                : p.pe.toFixed(1)}</td>
+            <td data-label="RoNW" class="num">${p.ronw !== null ? p.ronw.toFixed(1)+'%' : '—'}</td>
+            <td data-label="EPS" class="num">${p.eps !== null ? p.eps.toFixed(2) : '—'}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>` : '';
+
+  // Anchor money unlocks on these dates — a known block of supply arriving at a
+  // stock that has just listed.
+  const lock = f.lockIn ? `<p class="fact-note">Anchor lock-in ends ${
+    [f.lockIn.d30 && `${esc(f.lockIn.d30)} (half)`, f.lockIn.d90 && `${esc(f.lockIn.d90)} (rest)`]
+      .filter(Boolean).join(', ')}.</p>` : '';
+
+  host.innerHTML =
+    (html ? `<dl class="facts">${html}</dl>` : '') + warn + table + peers + lock +
+    `<p class="fact-note">Figures transcribed from the prospectus by
+      <a href="${esc(f.source)}" target="_blank" rel="noopener">IPO Watch ↗</a>.</p>`;
+}
+
 /** Direct links to the official documents, when NSE published them. */
 function docLinks(r){
   const links = [
@@ -1586,6 +1715,13 @@ function openModal(key){
         </div>
 
         <div class="chart-card">
+          <h4>What the company reports</h4>
+          <p class="chart-note">The other half of the decision: what the business earns, what it is
+            priced at, and how that sits against companies already listed.</p>
+          <div id="modal-fundamentals"></div>
+        </div>
+
+        <div class="chart-card">
           <h4>Subscription by category</h4>
           <p class="chart-note">A category with a lower multiple has better allotment odds.</p>
           <div id="modal-bars"></div>
@@ -1638,6 +1774,7 @@ function openModal(key){
   });
 
   renderFacts($('#modal-facts', back), r);
+  renderFundamentals($('#modal-fundamentals', back), r);
 
   const drawLine = () => {
     const full = historyPoints(r.histKey);

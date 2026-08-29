@@ -47,6 +47,13 @@ function writeJson(file, value) {
   fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(value, null, 1), 'utf8');
 }
 
+/**
+ * Reported financials, keyed the same way as everything else. Optional: the
+ * file only exists once scripts/fetch-data.js has found a prospectus summary
+ * for an issue, and a report is still worth writing without it.
+ */
+const fundamentals = readJson('fundamentals.json', {});
+
 // ------------------------------------------------------------------ schema
 
 const REPORT_SCHEMA = {
@@ -131,9 +138,18 @@ const SYSTEM = `You are an equity markets analyst writing short, structured read
 for a retail investor's personal dashboard.
 
 Ground rules:
-- Use ONLY the data supplied in the message. You have no other information about the company: \
-no financials, no RHP, no peer valuations. Never invent revenue, profit, P/E, promoter details \
-or sector commentary you were not given.
+- Use ONLY the data supplied in the message. Where a "Reported fundamentals" block is present, \
+those figures are all you know about the business; where it is absent, you know nothing about \
+the business at all. Never invent revenue, profit, P/E, promoter details or sector commentary \
+you were not given.
+- The profit figures arrive WITHOUT a sign, so a loss is indistinguishable from a profit by its \
+number alone. Each period states whether expenses exceeded revenue — that, not the magnitude, \
+tells you the direction. Never describe a company as profitable when its expenses exceeded \
+revenue, however large the profit figure looks.
+- Where fundamentals are given, weigh them against the sentiment. A rich P/E next to loss-making \
+peers, or a heavy debt-to-equity, is a reason to be cautious even when the premium is fat; solid \
+returns on a modest multiple can justify applying even when the premium is thin. Say which of the \
+two is driving your call.
 - When the data is thin — an issue that has not opened, no GMP, no subscription figures — say so \
 plainly, set confidence to low, and lean 'neutral' rather than manufacturing a view.
 - Grey market premium is an unofficial, thinly traded, easily manipulated indicator. Treat it as \
@@ -284,6 +300,49 @@ function describe(ipo, history) {
     }
   } else if (ipo.status === 'open') {
     lines.push('Category-wise subscription: not published yet');
+  }
+
+  // Everything above is demand and sentiment. What follows is what the company
+  // reports, which is the half a premium cannot tell you.
+  const f = fundamentals[ipo.key];
+  if (f) {
+    const k = f.kpis || {};
+    lines.push('', 'Reported fundamentals (from the prospectus):');
+
+    const fin = (f.financials || []).filter((x) => x.revenue !== null);
+    for (const x of fin) {
+      // The source strips the minus sign from a loss, so profit is passed as a
+      // magnitude with the direction stated separately. Left unqualified, a
+      // loss-making year reads to the model as a strong profit.
+      lines.push(
+        `  - ${x.period}: revenue ₹${x.revenue} cr, expenses ₹${x.expense ?? '?'} cr, ` +
+        `profit magnitude ₹${x.pat ?? '?'} cr (sign not published; ` +
+        `${x.spentMore ? 'expenses EXCEEDED revenue this period, so treat it as a loss' : 'revenue exceeded expenses'})`
+      );
+    }
+
+    const kv = [
+      ['Return on net worth', k.ronw, '%'],
+      ['Return on equity', k.roe, '%'],
+      ['Return on capital employed', k.roce, '%'],
+      ['EBITDA margin', k.ebitdaMargin, '%'],
+      ['PAT margin', k.patMargin, '%'],
+      ['Debt to equity', k.debtEquity, ''],
+      ['Earnings per share', k.eps, ' rupees'],
+    ].filter(([, v]) => v !== null && v !== undefined);
+    for (const [label, v, unit] of kv) lines.push(`  - ${label}: ${v}${unit}`);
+
+    const cap2 = capPrice(ipo);
+    if (cap2 && k.eps > 0) {
+      lines.push(`  - P/E at the ₹${cap2} cap price: ${(cap2 / k.eps).toFixed(1)}x`);
+    }
+
+    if (f.peers?.length) {
+      lines.push('  Listed peers (a negative P/E means the peer is loss-making):');
+      for (const p of f.peers) {
+        lines.push(`    - ${p.company}: P/E ${p.pe ?? '?'}, RoNW ${p.ronw ?? '?'}%, EPS ${p.eps ?? '?'}`);
+      }
+    }
   }
 
   return lines.join('\n');

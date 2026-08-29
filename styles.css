@@ -516,20 +516,24 @@ code {
 @media (max-width: 660px) {
   .compare-table,
   .cat-table,
-  #scorecard-table {
+  #scorecard-table,
+  .fin-table {
     min-width: 0;
     display: block;
   }
   .compare-table thead,
   .cat-table thead,
-  #scorecard-table thead { display: none; }
+  #scorecard-table thead,
+  .fin-table thead { display: none; }
   .compare-table tbody,
   .cat-table tbody,
-  #scorecard-table tbody { display: block; }
+  #scorecard-table tbody,
+  .fin-table tbody { display: block; }
 
   .compare-table tr,
   .cat-table tr,
-  #scorecard-table tr {
+  #scorecard-table tr,
+  .fin-table tr {
     display: block;
     padding: 10px 0;
     border-top: 1px solid var(--line-soft);
@@ -544,6 +548,7 @@ code {
   .compare-table td,
   .cat-table td,
   #scorecard-table td,
+  .fin-table td,
   .compare-table td:not(.name),
   .compare-table td:last-child {
     display: flex;
@@ -558,7 +563,8 @@ code {
   /* The name is the row's heading, so it spans rather than pairing up. */
   .compare-table td.name,
   .cat-table td.name,
-  #scorecard-table td.name {
+  #scorecard-table td.name,
+  .fin-table td.name {
     display: block;
     text-align: left;
     margin-bottom: 5px;
@@ -566,7 +572,8 @@ code {
   }
   .compare-table td::before,
   .cat-table td::before,
-  #scorecard-table td::before {
+  #scorecard-table td::before,
+  .fin-table td::before {
     content: attr(data-label);
     color: var(--faint);
     font-size: 11px;
@@ -906,6 +913,28 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .scorecard-detail[open] .chev { transform: rotate(90deg); }
 .scorecard-detail .tablewrap { margin-top: 8px; }
+
+/* ---------------------------------------------------------- fundamentals */
+
+.fin-table { font-size: 12.5px; }
+.fin-table td.num, .fin-table th.num { font-variant-numeric: tabular-nums; }
+/* A year the company spent more than it took in. The row is marked because the
+   profit column cannot say so itself — its sign is stripped upstream. */
+.fin-table tr.loss td.name { color: var(--warning); }
+.fin-table tr.loss td.name::after { content: ' · spent more'; font-size: 11px; color: var(--faint); }
+
+#modal-fundamentals .tablewrap { margin-top: 10px; }
+#modal-fundamentals .facts { margin-bottom: 4px; }
+
+.fact-warn {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--warning);
+  background: var(--panel-2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 12px;
+  color: var(--dim);
+}
 
 .chart-tip {
   position: absolute;

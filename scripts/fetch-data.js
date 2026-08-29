@@ -103,6 +103,38 @@ function writeJson(file, value) {
     console.error('IPO Watch failed:', gmpRes.reason?.message || 'empty response');
   }
 
+  // What the company reports, beside what the market feels. Only issues that
+  // are still a decision are worth the requests, and an issue's figures do not
+  // change once published, so anything already on file is left alone.
+  if (iposRes.status === 'fulfilled') {
+    const known = readJson('fundamentals.json', {});
+    const gmpRows = gmpRes.status === 'fulfilled' ? gmpRes.value : [];
+    const today = new Date().toISOString().slice(0, 10);
+    const soon = new Date(Date.now() + 21 * 86400e3).toISOString().slice(0, 10);
+
+    const wanted = iposRes.value
+      .filter((r) => r.company && r.start && r.start <= soon && (!r.end || r.end >= today))
+      .map((r) => ({
+        key: sources.nameKey(r.company),
+        company: r.company,
+        page: gmpRows.find((g) => g.key === sources.nameKey(r.company))?.page || null,
+      }))
+      .filter((it) => it.key && !known[it.key]);
+
+    if (wanted.length) {
+      try {
+        const found = await sources.getFundamentals(wanted);
+        const merged = { ...known, ...found };
+        writeJson('fundamentals.json', merged);
+        console.log(`fundamentals.json: +${Object.keys(found).length} issues, ${Object.keys(merged).length} on file`);
+      } catch (err) {
+        console.warn('fundamentals skipped:', err.message);
+      }
+    } else {
+      console.log(`fundamentals.json: nothing new, ${Object.keys(known).length} on file`);
+    }
+  }
+
   if (!ok) {
     console.error('both upstreams failed; leaving existing data untouched');
     process.exit(1);
