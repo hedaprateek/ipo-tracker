@@ -87,6 +87,19 @@ body {
 a { color: var(--accent); }
 [hidden] { display: none !important; }
 
+/* Re-fetching holds the previous render at reduced opacity rather than
+   blanking to a skeleton — no layout jump, and the old numbers stay readable
+   until the new ones land. The very first load has nothing to hold, so it
+   only shows a soft pulse. */
+body.busy main { opacity: 0.6; transition: opacity 0.15s; }
+body.first-load .empty { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+
+@media (prefers-reduced-motion: reduce) {
+  body.busy main { transition: none; }
+  body.first-load .empty { animation: none; }
+}
+
 /* ---------------------------------------------------------------- header */
 
 header {
@@ -111,18 +124,78 @@ h1 {
 h1 .dot { color: var(--accent); }
 .grow { flex: 1; }
 
+/* Provenance is reference material, not a headline: one quiet line that opens
+   for detail. On a phone this is the difference between the answer being on
+   the fold and being pushed under three rows of chrome. */
 .statusbar {
-  display: flex;
-  gap: 8px 16px;
-  flex-wrap: wrap;
-  padding: 7px 18px;
   font-size: 12.5px;
   color: var(--dim);
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
+.statusbar > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 18px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.statusbar > summary::-webkit-details-marker { display: none; }
+.statusbar > summary:hover { color: var(--ink-2); }
+.statusbar .chev {
+  transition: transform 0.15s;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1;
+}
+.statusbar[open] .chev { transform: rotate(90deg); }
+
+.statusbar-body {
+  display: flex;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  padding: 0 18px 8px;
+}
 .statusbar .err { color: var(--critical); }
 .statusbar b { color: var(--ink-2); font-weight: 600; }
+/* A failed source is not something to leave folded away. */
+.statusbar.has-error > summary { color: var(--critical); }
+
+h1 #today { color: var(--faint); font-weight: 400; }
+
+/* Two labels for one control: the full word where it fits, a glyph where it
+   does not. Only ever one is in the accessibility tree at a time. */
+.on-narrow { display: none; }
+@media (max-width: 560px) {
+  .on-wide { display: none; }
+  .on-narrow { display: inline; }
+  header { padding: 9px 12px; gap: 8px; }
+  .statusbar > summary,
+  .statusbar-body { padding-left: 12px; padding-right: 12px; }
+  .tabs { padding: 10px 12px 0; gap: 5px; }
+  .tabs button { padding: 6px 10px; font-size: 13px; }
+  main { padding: 4px 12px 80px; }
+  h1 { font-size: 14px; }
+
+  /* Reclaim the padding that a phone cannot spare. */
+  .chart-card { padding: 12px; }
+  .today-card { padding: 12px; }
+  .today-head { margin: 12px 0 10px; }
+  .today-head h2 { font-size: 16px; }
+  .chart-card > h4,
+  .chart-head h4 { font-size: 12.5px; }
+  .chart-card > .chart-note,
+  .chart-head .chart-note { margin-bottom: 8px; }
+
+  /* Full-width controls beat two ragged rows of half-width ones. */
+  #today-actions { width: 100%; gap: 6px; }
+  #today-actions select,
+  #today-actions button { flex: 1 1 auto; }
+  .budget { width: 100%; justify-content: space-between; }
+  .budget input { flex: 1 1 auto; width: auto; max-width: 160px; }
+}
 
 /* ------------------------------------------------------------- controls */
 
@@ -180,6 +253,7 @@ select { padding-right: 6px; }
 }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--accent); color: var(--accent-ink); }
+.sort-field { display: inline-flex; align-items: center; gap: 8px; }
 .filter-label { font-size: 12px; color: var(--faint); margin-left: 4px; }
 .result-count { font-size: 12.5px; color: var(--dim); margin-left: auto; }
 
@@ -327,11 +401,21 @@ code {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* The name column absorbs the slack so the figures cluster together and stay
+   comparable down the page, instead of being stretched across 240px columns. */
+.compare-table th:first-child,
+.compare-table td.name {
+  width: 100%;
+  min-width: 170px;
+}
 .compare-table td.name {
   white-space: normal;
-  min-width: 170px;
   font-weight: 600;
 }
+.compare-table th:not(:first-child),
+.compare-table td:not(.name) { padding-right: 26px; }
+.compare-table th:last-child,
+.compare-table td:last-child { padding-right: 0; text-align: right; }
 .compare-table tr.clickable { cursor: pointer; }
 .compare-table tr.clickable:hover td { background: var(--panel-2); }
 .compare-table td.urgent { color: var(--critical); font-weight: 650; }
@@ -339,6 +423,155 @@ code {
 .compare-table tr.over-budget td { opacity: 0.45; }
 .compare-table .sub2 { color: var(--faint); font-size: 11.5px; }
 .compare-table .muted { color: var(--faint); font-style: italic; }
+
+/* The GMP table carries ten columns; sideways scrolling on a phone hides the
+   premium itself, which is the only reason to open the tab. Stacking one value
+   per line would run each issue to ten lines, so the short figures pair up in
+   two columns and only the name, trend and verdict take the full width. */
+@media (max-width: 660px) {
+  #gmp-table { display: block; min-width: 0; }
+  #gmp-table thead { display: none; }
+  #gmp-table tbody { display: block; }
+  #gmp-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px 14px;
+    padding: 11px 0;
+    border-top: 1px solid var(--line-soft);
+  }
+  #gmp-table tr:first-child { border-top: 0; }
+  #gmp-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+  #gmp-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--faint);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  /* The name is the block's heading and the empty-state spans it; neither
+     wants a label above it. */
+  #gmp-table td:not([data-label])::before { content: none; }
+  #gmp-table td.name,
+  #gmp-table td.wide,
+  #gmp-table td.empty { grid-column: 1 / -1; }
+  #gmp-table td.name {
+    white-space: normal;
+    font-weight: 600;
+    font-size: 13.5px;
+  }
+}
+
+/* The allotment table has the same problem: its registrar picker and check
+   buttons sit off-screen on a phone, which is exactly what it exists for. */
+@media (max-width: 660px) {
+  #allot-table { display: block; min-width: 0; }
+  #allot-table thead { display: none; }
+  #allot-table tbody { display: block; }
+  #allot-table tr {
+    display: block;
+    padding: 11px 0;
+    border-top: 1px solid var(--line-soft);
+  }
+  #allot-table tr:first-child { border-top: 0; }
+  #allot-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 3px 0;
+    border: 0;
+    text-align: right;
+  }
+  #allot-table td.name {
+    display: block;
+    text-align: left;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  #allot-table td::before {
+    content: attr(data-label);
+    color: var(--faint);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex: 0 0 auto;
+  }
+  #allot-table select { max-width: 62%; }
+}
+
+/* ------------------------------------------------------- tables on phones */
+
+/*
+ * Five columns cannot fit 390px, and a sideways-scrolling table hides exactly
+ * the numbers the row exists to show. Below this width both comparison tables
+ * become stacked blocks, each value labelled by the header it belonged to.
+ */
+@media (max-width: 660px) {
+  .compare-table,
+  .cat-table {
+    min-width: 0;
+    display: block;
+  }
+  .compare-table thead,
+  .cat-table thead { display: none; }
+  .compare-table tbody,
+  .cat-table tbody { display: block; }
+
+  .compare-table tr,
+  .cat-table tr {
+    display: block;
+    padding: 10px 0;
+    border-top: 1px solid var(--line-soft);
+  }
+  .compare-table tr:first-child,
+  .cat-table tr:first-child { border-top: 0; }
+
+  /* Reset the desktop column shaping — width and gutters mean nothing once
+     each cell is its own labelled line. */
+  .compare-table th:first-child,
+  .compare-table td.name { width: auto; min-width: 0; }
+  .compare-table td,
+  .cat-table td,
+  .compare-table td:not(.name),
+  .compare-table td:last-child {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    padding: 2px 0;
+    border: 0;
+    white-space: normal;
+    text-align: right;
+  }
+  /* The name is the row's heading, so it spans rather than pairing up. */
+  .compare-table td.name,
+  .cat-table td.name {
+    display: block;
+    text-align: left;
+    margin-bottom: 5px;
+    font-size: 13.5px;
+  }
+  .compare-table td::before,
+  .cat-table td::before {
+    content: attr(data-label);
+    color: var(--faint);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+    flex: 0 0 auto;
+  }
+  /* The ::before already names it; the suffix would say it twice. */
+  .cat-table tr.best td:first-child::after { content: none; }
+  .cat-table tr.best td.name { color: var(--good); }
+}
 
 .budget {
   display: inline-flex;
@@ -424,7 +657,9 @@ code {
 .gmpval { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .up { color: var(--good); }
 .down { color: var(--critical); }
-.flat { color: var(--warning); }
+/* A zero premium is neutral, not a caution — the amber status token is
+   reserved for things that actually want attention, like awaiting listing. */
+.flat { color: var(--dim); }
 .gain { font-size: 12px; color: var(--dim); }
 .spark { margin-left: auto; }
 

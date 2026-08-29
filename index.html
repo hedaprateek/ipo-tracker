@@ -9,26 +9,32 @@
 <body>
 
 <header>
-  <h1>IPO Tracker <span class="dot">·</span> <span id="today" style="color:var(--faint);font-weight:400"></span></h1>
+  <h1>IPO Tracker <span class="dot">·</span> <span id="today"></span></h1>
   <div class="grow"></div>
   <button id="theme" class="icon" title="Toggle light/dark" aria-label="Toggle theme">☀</button>
-  <button id="auto">Auto: off</button>
-  <button id="refresh" class="primary">Refresh</button>
+  <button id="auto" title="Refresh automatically every 5 minutes">Auto: off</button>
+  <button id="refresh" class="primary">
+    <span class="on-wide">Refresh</span><span class="on-narrow" aria-hidden="true">↻</span>
+  </button>
 </header>
 
-<div class="statusbar">
-  <span id="src-ipo">IPOs —</span>
-  <span id="src-gmp">GMP —</span>
-  <span id="src-report">AI reports —</span>
-  <span id="mode" style="margin-left:auto"></span>
-</div>
+<!-- Where the numbers came from and how fresh they are. Detail, not headline —
+     collapsed on small screens so it never pushes the content off the fold. -->
+<details class="statusbar" id="statusbar">
+  <summary><span id="mode"></span><span class="chev" aria-hidden="true">›</span></summary>
+  <div class="statusbar-body">
+    <span id="src-ipo">IPOs —</span>
+    <span id="src-gmp">GMP —</span>
+    <span id="src-report">AI reports —</span>
+  </div>
+</details>
 
-<div class="tabs">
+<nav class="tabs" aria-label="Views">
   <button data-tab="today" class="on">Today</button>
   <button data-tab="ipos">IPOs</button>
-  <button data-tab="gmp">GMP &amp; Trend</button>
-  <button data-tab="allot">My Applications</button>
-</div>
+  <button data-tab="gmp">GMP<span class="on-wide"> &amp; Trend</span></button>
+  <button data-tab="allot"><span class="on-wide">My </span>Applications</button>
+</nav>
 
 <main>
   <div id="offline-banner" class="banner" hidden></div>
@@ -63,13 +69,17 @@
       <button data-status data-value="closed">Closed</button>
     </div>
 
-    <label class="filter-label" for="sort">Sort</label>
-    <select id="sort">
-      <option value="closing">Closing date</option>
-      <option value="gmp">GMP %</option>
-      <option value="subscribed">Subscription</option>
-      <option value="name">Name</option>
-    </select>
+    <!-- Kept in one box so a narrow screen never wraps the label onto the row
+         above, stranded from the control it names. -->
+    <span class="sort-field">
+      <label class="filter-label" for="sort">Sort</label>
+      <select id="sort">
+        <option value="closing">Closing date</option>
+        <option value="gmp">GMP %</option>
+        <option value="subscribed">Subscription</option>
+        <option value="name">Name</option>
+      </select>
+    </span>
 
     <button id="reset-filters">Reset</button>
     <span class="result-count" id="result-count"></span>

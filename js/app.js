@@ -29,6 +29,7 @@ const state = {
   gmpSort: { col: 'gmpPct', dir: -1 },
   filters: { q: '', board: 'all', status: 'all', sort: 'closing' },
   range: 'all',
+  loaded: false,
 };
 
 const $ = (s, r) => (r || document).querySelector(s);
@@ -216,10 +217,36 @@ function recordLocalHistory(rows){
   save(LS.history, h);
 }
 
+/**
+ * "Nothing matches these filters" is a lie while the first fetch is still in
+ * flight. Track whether any data has ever arrived so the empty states can tell
+ * the two situations apart, and dim rather than blank on a re-fetch.
+ */
+function setBusy(busy){
+  document.body.classList.toggle('busy', busy);
+  if (busy && !state.loaded) document.body.classList.add('first-load');
+  else document.body.classList.remove('first-load');
+}
+
+const emptyText = (filtered) => state.loaded
+  ? (filtered || 'Nothing matches these filters.')
+  : 'Loading…';
+
+function setRefreshLabel(btn, wide, narrow){
+  const w = $('.on-wide', btn);
+  const n = $('.on-narrow', btn);
+  if (w) w.textContent = wide; else btn.textContent = wide;
+  if (n) n.textContent = narrow;
+  btn.setAttribute('aria-label', wide);
+}
+
 async function refresh(){
   const btn = $('#refresh');
   btn.disabled = true;
-  btn.textContent = 'Refreshing…';
+  // Swap only the wide label — overwriting textContent would destroy the
+  // narrow-screen glyph and force the full word back onto a phone header.
+  setRefreshLabel(btn, 'Refreshing…', '⟳');
+  setBusy(true);
 
   const mode = await detectMode();
   let ipoJob, gmpJob;
@@ -271,13 +298,20 @@ async function refresh(){
     ? `${nReports} AI report${nReports === 1 ? '' : 's'}`
     : 'AI reports: not configured';
 
-  $('#mode').textContent = {
-    server: 'live via local server',
-    static: `published data · ${state.fetchedAt ? relativeTime(state.fetchedAt) : 'updated'}`,
-    proxy:  'no data source — using public proxies',
-  }[mode];
+  // The collapsed summary carries the one line worth seeing at a glance:
+  // how fresh the data is, or that something failed.
+  const failed = $$('.statusbar .err').length;
+  $('#statusbar').classList.toggle('has-error', failed > 0);
+  $('#mode').textContent = failed
+    ? `${failed} source${failed === 1 ? '' : 's'} failed to load — tap for detail`
+    : {
+        server: 'Live · via local server',
+        static: `Updated ${state.fetchedAt ? relativeTime(state.fetchedAt) : 'recently'}`,
+        proxy:  'No data source — using public proxies',
+      }[mode];
 
   if (state.ipos.length || state.gmp.length){
+    state.loaded = true;
     save(LS.snapshot, { ipos: state.ipos, gmp: state.gmp, at: Date.now() });
   }
 
@@ -285,7 +319,8 @@ async function refresh(){
   render();
 
   btn.disabled = false;
-  btn.textContent = 'Refresh';
+  setRefreshLabel(btn, 'Refresh', '↻');
+  setBusy(false);
 }
 
 function showBanner(mode, ipoRes, gmpRes){
@@ -619,8 +654,8 @@ function renderIpos(){
     ${g.note && g.rows.length ? `<p class="group-note">${g.note}</p>` : ''}
     ${g.rows.length
       ? `<div class="cards">${g.rows.map((r) => card(r, t)).join('')}</div>`
-      : `<div class="empty">Nothing matches these filters.</div>`}
-  `).join('') || `<div class="empty">Nothing matches these filters.</div>`;
+      : `<div class="empty">${emptyText()}</div>`}
+  `).join('') || `<div class="empty">${emptyText()}</div>`;
 }
 
 function timingText(r, t){
@@ -743,7 +778,7 @@ function renderToday(){
   if (!rows.length){
     $('#today-compare').innerHTML = '';
     $('#today-list').innerHTML =
-      `<div class="empty">Nothing is open today. The IPOs tab lists what is coming up.</div>`;
+      `<div class="empty">${emptyText('Nothing is open today. The IPOs tab lists what is coming up.')}</div>`;
     return;
   }
 
@@ -816,19 +851,21 @@ function compareRow({ r, opts, rec, retail, affordable }, t){
 
   const best = rec && rec.pick.key !== 'retail' ? rec.pick : null;
 
+  // data-label lets the same markup stack into labelled rows on a phone,
+  // where five columns cannot fit and sideways scrolling hides the numbers.
   return `<tr class="clickable ${affordable ? '' : 'over-budget'}" data-open="${esc(r.key)}">
     <td class="name">${esc(r.name)}${r.board === 'SME' ? ' <span class="tag">SME</span>' : ''}</td>
-    <td class="${days === 0 ? 'urgent' : ''}">${closes}</td>
-    <td>${noData
+    <td data-label="Closes" class="${days === 0 ? 'urgent' : ''}">${closes}</td>
+    <td data-label="Retail application">${noData
       ? `<span class="muted">${noData}</span>`
       : retail
         ? `${inr(retail.amount)}<span class="sub2"> · ${odds(retail.times)}</span>`
         : '—'}</td>
-    <td>${noData ? '<span class="muted">—</span>'
+    <td data-label="Best odds">${noData ? '<span class="muted">—</span>'
       : best
         ? `<b>${esc(best.label.replace(/ \(.*\)/, ''))}</b> ${inr(best.amount)}<span class="sub2"> · ${odds(best.times)}</span>`
         : `<span class="muted">retail is best</span>`}</td>
-    <td class="${r.gmpPct === null ? '' : moveClass(r.gmpPct)}">${
+    <td data-label="GMP" class="${r.gmpPct === null ? '' : moveClass(r.gmpPct)}">${
       r.gmpPct === null ? '—' : signed(r.gmpPct)}</td>
   </tr>`;
 }
@@ -904,12 +941,12 @@ function todayCard(r, t){
         <th>${hasTimes ? 'Odds of a lot' : 'Share of applicants'}</th></tr></thead>
       <tbody>${opts.map((o) => `
         <tr class="${best && o.key === best.key ? 'best' : ''}">
-          <td>${esc(o.label)}</td>
-          <td>${inr(o.amount)}<span class="lots"> · ${o.lots} lot${o.lots === 1 ? '' : 's'}</span></td>
-          <td>${hasTimes
+          <td class="name">${esc(o.label)}</td>
+          <td data-label="Minimum">${inr(o.amount)}<span class="lots"> · ${o.lots} lot${o.lots === 1 ? '' : 's'}</span></td>
+          <td data-label="${hasTimes ? 'Subscribed' : 'Applications'}">${hasTimes
             ? (o.times === null ? '—' : o.times.toFixed(2) + '×')
             : (o.applications === null ? '—' : o.applications.toLocaleString('en-IN'))}</td>
-          <td>${hasTimes
+          <td data-label="${hasTimes ? 'Odds of a lot' : 'Share of applicants'}">${hasTimes
             ? (o.times === null ? '—'
                : o.times <= 1 ? 'full allotment likely'
                : `about 1 in ${o.times.toFixed(1)}`)
@@ -1002,17 +1039,20 @@ function renderGmp(){
   $('#gmp-table tbody').innerHTML = sorted.map((r) => {
     const cls = r.gmp > 0 ? 'up' : r.gmp < 0 ? 'down' : 'flat';
     const ch = r.change;
+    // Ten columns will not fit a phone, so each cell carries the header it
+    // belongs to and the row re-flows into a labelled two-column block. The
+    // name, trend and verdict are marked to span the full width there.
     return `<tr class="clickable" data-open="${esc(r.key)}">
-      <td>${esc(r.name)}</td>
-      <td><span class="tag">${r.board}</span></td>
-      <td>${esc(r.status)}</td>
-      <td class="num">${money(r.price)}</td>
-      <td class="num ${cls}"><b>${money(r.gmp)}</b></td>
-      <td class="num">${r.gmpPct !== null ? (r.gmpPct>0?'+':'')+r.gmpPct.toFixed(1)+'%' : '—'}</td>
-      <td class="num">${r.subscription != null ? r.subscription.toFixed(2)+'×' : '—'}</td>
-      <td class="num ${ch>0?'up':ch<0?'down':''}">${ch===null?'—':(ch>0?'+':'')+ch}</td>
-      <td>${sparkline(r.histKey)}</td>
-      <td>${verdictChip(r.report) || '—'}</td>
+      <td class="name">${esc(r.name)}</td>
+      <td data-label="Board"><span class="tag">${r.board}</span></td>
+      <td data-label="Status">${esc(r.status)}</td>
+      <td data-label="Price" class="num">${money(r.price)}</td>
+      <td data-label="GMP" class="num ${cls}"><b>${money(r.gmp)}</b></td>
+      <td data-label="GMP %" class="num">${r.gmpPct !== null ? (r.gmpPct>0?'+':'')+r.gmpPct.toFixed(1)+'%' : '—'}</td>
+      <td data-label="Subscribed" class="num">${r.subscription != null ? r.subscription.toFixed(2)+'×' : '—'}</td>
+      <td data-label="Change" class="num ${ch>0?'up':ch<0?'down':''}">${ch===null?'—':(ch>0?'+':'')+ch}</td>
+      <td data-label="Trend" class="wide">${sparkline(r.histKey)}</td>
+      <td data-label="Verdict" class="wide">${verdictChip(r.report) || '—'}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="10" class="empty">No GMP data for these filters.</td></tr>`;
 }
@@ -1628,12 +1668,12 @@ function renderAllot(){
 
   $('#allot-table tbody').innerHTML = closed.map((r) => `
     <tr>
-      <td>${esc(r.name)} ${r.board==='SME'?'<span class="tag">SME</span>':''}</td>
-      <td>${fmtDate(r.end)}</td>
-      <td><select data-reg="${esc(r.key)}">
+      <td class="name">${esc(r.name)} ${r.board==='SME'?'<span class="tag">SME</span>':''}</td>
+      <td data-label="Closed">${fmtDate(r.end)}</td>
+      <td data-label="Registrar"><select data-reg="${esc(r.key)}">
         ${REGISTRARS.map((x,i)=>`<option value="${i}"${picked[r.key]===i?' selected':''}>${esc(x.name)}</option>`).join('')}
       </select></td>
-      <td>${ids.length
+      <td data-label="Check">${ids.length
         ? ids.map((id,ii)=>`<button data-check="${esc(r.key)}" data-id="${ii}">${esc(id.label||id.value)}</button>`).join(' ')
         : '<span class="empty" style="padding:0">Add a PAN above</span>'}</td>
     </tr>`).join('') || `<tr><td colspan="4" class="empty">No recently closed IPOs.</td></tr>`;
