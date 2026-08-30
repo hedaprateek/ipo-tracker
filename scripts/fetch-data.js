@@ -135,6 +135,22 @@ function writeJson(file, value) {
     }
   }
 
+  // The other offers a shareholder has to decide about. Only the ones with
+  // terms get a quote — a dividend needs no price to compare against.
+  try {
+    const actions = await sources.getCorporateActions();
+    const priced = actions.filter((a) => ['rights', 'buyback', 'bonus', 'split'].includes(a.type));
+    const quotes = await sources.getQuotes(priced.map((a) => a.symbol)).catch(() => ({}));
+
+    writeJson('corporate.json', { ok: true, fetchedAt: now, actions, quotes });
+    const counts = actions.reduce((m, a) => ({ ...m, [a.type]: (m[a.type] || 0) + 1 }), {});
+    console.log(`corporate.json: ${actions.length} actions ` +
+      `(${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ')}), ` +
+      `${Object.keys(quotes).length} quoted`);
+  } catch (err) {
+    console.warn('corporate actions skipped:', err.message);
+  }
+
   if (!ok) {
     console.error('both upstreams failed; leaving existing data untouched');
     process.exit(1);

@@ -517,29 +517,39 @@ code {
   .compare-table,
   .cat-table,
   #scorecard-table,
-  .fin-table {
+  .fin-table,
+  #corp-table,
+  #corp-cal-table {
     min-width: 0;
     display: block;
   }
   .compare-table thead,
   .cat-table thead,
   #scorecard-table thead,
-  .fin-table thead { display: none; }
+  .fin-table thead,
+  #corp-table thead,
+  #corp-cal-table thead { display: none; }
   .compare-table tbody,
   .cat-table tbody,
   #scorecard-table tbody,
-  .fin-table tbody { display: block; }
+  .fin-table tbody,
+  #corp-table tbody,
+  #corp-cal-table tbody { display: block; }
 
   .compare-table tr,
   .cat-table tr,
   #scorecard-table tr,
-  .fin-table tr {
+  .fin-table tr,
+  #corp-table tr,
+  #corp-cal-table tr {
     display: block;
     padding: 10px 0;
     border-top: 1px solid var(--line-soft);
   }
   .compare-table tr:first-child,
-  .cat-table tr:first-child { border-top: 0; }
+  .cat-table tr:first-child,
+  #corp-table tr:first-child,
+  #corp-cal-table tr:first-child { border-top: 0; }
 
   /* Reset the desktop column shaping — width and gutters mean nothing once
      each cell is its own labelled line. */
@@ -549,6 +559,8 @@ code {
   .cat-table td,
   #scorecard-table td,
   .fin-table td,
+  #corp-table td,
+  #corp-cal-table td,
   .compare-table td:not(.name),
   .compare-table td:last-child {
     display: flex;
@@ -564,7 +576,9 @@ code {
   .compare-table td.name,
   .cat-table td.name,
   #scorecard-table td.name,
-  .fin-table td.name {
+  .fin-table td.name,
+  #corp-table td.name,
+  #corp-cal-table td.name {
     display: block;
     text-align: left;
     margin-bottom: 5px;
@@ -573,7 +587,9 @@ code {
   .compare-table td::before,
   .cat-table td::before,
   #scorecard-table td::before,
-  .fin-table td::before {
+  .fin-table td::before,
+  #corp-table td::before,
+  #corp-cal-table td::before {
     content: attr(data-label);
     color: var(--faint);
     font-size: 11px;
@@ -925,6 +941,27 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 #modal-fundamentals .tablewrap { margin-top: 10px; }
 #modal-fundamentals .facts { margin-bottom: 4px; }
+
+/* ------------------------------------------------------ corporate offers */
+
+#corp-table td.num, #corp-table th.num { font-variant-numeric: tabular-nums; }
+#corp-table .sub2 { color: var(--faint); font-size: 11.5px; }
+#corp-table .muted { color: var(--faint); font-style: italic; }
+
+#corp-cal > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  color: var(--ink-2);
+  user-select: none;
+}
+#corp-cal > summary::-webkit-details-marker { display: none; }
+#corp-cal[open] .chev { transform: rotate(90deg); }
+#corp-cal .chev { transition: transform 0.15s; color: var(--faint); font-size: 14px; line-height: 1; }
+#corp-cal .tablewrap { margin-top: 10px; }
 
 .fact-warn {
   margin: 10px 0 0;

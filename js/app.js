@@ -31,6 +31,11 @@ const state = {
   range: 'all',
   loaded: false,
   fundamentals: {},
+  corporate: {},
+  // Recent by default. The ex-date is the cut-off for *eligibility*; a rights
+  // issue stays open for applications for a fortnight or so afterwards, so
+  // hiding everything past its ex-date would hide offers still worth acting on.
+  corpWhen: 'all',
 };
 
 const $ = (s, r) => (r || document).querySelector(s);
@@ -269,9 +274,10 @@ async function refresh(){
   // Reports and fundamentals are optional everywhere — absence is not an error.
   const reportJob = json('data/reports.json').catch(() => null);
   const fundJob = json('data/fundamentals.json').catch(() => null);
+  const corpJob = json('data/corporate.json').catch(() => null);
 
-  const [ipoRes, gmpRes, repRes, fundRes] =
-    await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob]);
+  const [ipoRes, gmpRes, repRes, fundRes, corpRes] =
+    await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob, corpJob]);
 
   if (ipoRes.status === 'fulfilled' && ipoRes.value?.length){
     state.ipos = ipoRes.value;
@@ -296,6 +302,7 @@ async function refresh(){
   }
 
   state.fundamentals = (fundRes.status === 'fulfilled' && fundRes.value) || {};
+  state.corporate = (corpRes.status === 'fulfilled' && corpRes.value) || {};
   state.reports = (repRes.status === 'fulfilled' && repRes.value?.reports) || {};
   const nReports = Object.keys(state.reports).length;
   $('#src-report').textContent = nReports
@@ -682,6 +689,85 @@ function renderScorecard(rows){
         <td data-label="Listed at" class="num ${moveClass(g.actual)}">${signed(g.actual)}</td>
         <td data-label="Miss" class="num">${signed(g.error)}</td>
       </tr>`).join('');
+}
+
+// ----------------------------------------------------- corporate offers
+
+const OFFER_TYPES = ['rights', 'buyback', 'bonus', 'split'];
+
+/**
+ * A rights issue is quoted as a premium over face value, not as a price. What
+ * a shareholder actually pays is the two added together, and that is the only
+ * figure worth setting against the market price.
+ */
+function rightsPrice(a){
+  if (a.type !== 'rights' || a.premium === null || a.premium === undefined) return null;
+  return a.premium + (a.faceValue || 0);
+}
+
+function renderCorp(){
+  const host = $('#corp-table tbody');
+  if (!host) return;
+
+  const data = state.corporate || {};
+  const actions = data.actions || [];
+  const quotes = data.quotes || {};
+  const today = new Date().toISOString().slice(0, 10);
+  const ahead = state.corpWhen !== 'all';
+
+  const offers = actions
+    .filter((a) => OFFER_TYPES.includes(a.type))
+    .filter((a) => !ahead || !a.exDate || a.exDate >= today)
+    .sort((a, b) => (a.exDate || '9999').localeCompare(b.exDate || '9999'));
+
+  $('#corp-note').textContent = actions.length
+    ? (ahead
+        ? 'Rights issues, buybacks, bonuses and splits whose ex-date is still ahead.'
+        : 'Rights issues, buybacks, bonuses and splits from the last month and the next four. ' +
+          'The ex-date decides who is eligible — a rights issue usually stays open for ' +
+          'applications for a fortnight after it.')
+    : 'Corporate actions have not been fetched yet.';
+
+  host.innerHTML = offers.map((a) => {
+    const price = rightsPrice(a);
+    const cmp = quotes[a.symbol] ?? null;
+    // A rights issue priced above the market is one to let lapse: the same
+    // share is cheaper on the exchange.
+    const gap = price && cmp ? ((cmp - price) / cmp) * 100 : null;
+
+    const terms = a.type === 'rights' && a.ratioNew
+      ? `${a.ratioNew} new for every ${a.ratioHeld} held`
+      : a.type === 'bonus' && a.ratioNew
+        ? `${a.ratioNew} free for every ${a.ratioHeld} held`
+        : esc(a.detail || '—');
+
+    return `<tr>
+      <td class="name">${esc(a.company || a.symbol || '—')}${
+        a.symbol ? ` <span class="tag">${esc(a.symbol)}</span>` : ''}</td>
+      <td data-label="Offer">${esc(a.label)}</td>
+      <td data-label="Terms">${terms}</td>
+      <td data-label="Offer price" class="num">${price ? money(price) : '—'}</td>
+      <td data-label="Discount to market" class="num ${gap === null ? '' : moveClass(gap)}">${
+        gap === null
+          ? (cmp ? `<span class="muted">${money(cmp)} mkt</span>` : '—')
+          : `${signed(gap)}<span class="sub2"> · ${money(cmp)} mkt</span>`}</td>
+      <td data-label="Ex-date">${a.exDate ? fmtDate(a.exDate) : '—'}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty">${
+    actions.length ? 'No offers in this window.' : emptyText()}</td></tr>`;
+
+  // Dividends and splits are a calendar, not a decision — kept, but folded away.
+  const cal = actions
+    .filter((a) => !OFFER_TYPES.includes(a.type))
+    .filter((a) => !a.exDate || a.exDate >= today)
+    .sort((a, b) => (a.exDate || '9999').localeCompare(b.exDate || '9999'));
+
+  $('#corp-cal-table tbody').innerHTML = cal.map((a) => `
+    <tr>
+      <td class="name">${esc(a.company || a.symbol || '—')}</td>
+      <td data-label="Action">${esc(a.detail || a.label)}</td>
+      <td data-label="Ex-date">${a.exDate ? fmtDate(a.exDate) : '—'}</td>
+    </tr>`).join('') || `<tr><td colspan="3" class="empty">Nothing upcoming.</td></tr>`;
 }
 
 // ---------------------------------------------------------------- filters
@@ -1941,16 +2027,17 @@ function render(){
   renderGmp();
   renderIds();
   renderAllot();
+  renderCorp();
 }
 
-const TABS = ['today','ipos','gmp','allot'];
+const TABS = ['today','ipos','gmp','allot','corp'];
 function showTab(name){
   if (!TABS.includes(name)) name = 'today';
   $$('.tabs button').forEach((x) => x.classList.toggle('on', x.dataset.tab === name));
   TABS.forEach((id) => { $('#tab-'+id).hidden = (id !== name); });
   // Today and My Applications answer a fixed question; the filter row would
   // only let you hide the very thing each is for.
-  $('#filter-row').hidden = (name === 'allot' || name === 'today');
+  $('#filter-row').hidden = (name === 'allot' || name === 'today' || name === 'corp');
   // Charts size to their container, so re-draw once the tab is actually visible.
   if (name === 'gmp') renderGmp();
 }
@@ -1984,6 +2071,12 @@ function bindSeg(sel, key){
 }
 bindSeg('[data-board]', 'board');
 bindSeg('[data-status]', 'status');
+
+$$('#corp-when button').forEach((b) => b.addEventListener('click', () => {
+  state.corpWhen = b.dataset.when;
+  $$('#corp-when button').forEach((x) => x.classList.toggle('on', x === b));
+  renderCorp();
+}));
 
 $('#search').addEventListener('input', (e) => {
   state.filters.q = e.target.value.trim();

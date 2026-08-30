@@ -34,6 +34,7 @@
   <button data-tab="ipos">IPOs</button>
   <button data-tab="gmp">GMP<span class="on-wide"> &amp; Trend</span></button>
   <button data-tab="allot"><span class="on-wide">My </span>Applications</button>
+  <button data-tab="corp"><span class="on-wide">Corporate </span>Offers</button>
 </nav>
 
 <main>
@@ -186,6 +187,52 @@
         <a href="https://www.nseindia.com/products-services/equity-ipo-bid-details" target="_blank" rel="noopener">Open NSE bid details ↗</a>
       </div>
     </div>
+  </section>
+
+  <section id="tab-corp" hidden>
+    <p class="note" style="margin:14px 0 12px">
+      The other offers a shareholder decides about. A rights issue is priced, so it can be set
+      against where the stock actually trades; NSE publishes no price, size or acceptance ratio
+      for a buyback through this feed, so those carry their dates and nothing more.
+    </p>
+
+    <div class="chart-card">
+      <div class="chart-head">
+        <div class="grow">
+          <h4>Offers with terms</h4>
+          <p class="chart-note" id="corp-note"></p>
+        </div>
+        <div class="seg" id="corp-when" role="group" aria-label="Window">
+          <button data-when="all" class="on">Recent &amp; ahead</button>
+          <button data-when="upcoming">Ahead only</button>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table id="corp-table">
+          <thead><tr>
+            <th>Company</th>
+            <th>Offer</th>
+            <th>Terms</th>
+            <th class="num">Offer price</th>
+            <th class="num">Discount to market</th>
+            <th>Ex-date</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <details class="chart-card" id="corp-cal">
+      <summary><b>Dividend and split calendar</b><span class="chev" aria-hidden="true">›</span></summary>
+      <div class="tablewrap">
+        <table id="corp-cal-table">
+          <thead><tr>
+            <th>Company</th><th>Action</th><th>Ex-date</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </details>
   </section>
 </main>
 
