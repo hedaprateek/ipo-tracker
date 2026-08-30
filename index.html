@@ -133,6 +133,24 @@
       </details>
     </section>
 
+    <!-- Below 660px the table stacks and its header row is hidden, which takes
+         the sort controls with it. This is the same sort, in a form that
+         survives the stack. -->
+    <div class="stack-sort">
+      <label class="filter-label" for="gmp-sort">Sort by</label>
+      <select id="gmp-sort">
+        <option value="gmpPct">GMP %</option>
+        <option value="gmp">GMP</option>
+        <option value="name">IPO</option>
+        <option value="board">Board</option>
+        <option value="status">Status</option>
+        <option value="price">Price</option>
+        <option value="subscription">Subscribed</option>
+        <option value="change">Change</option>
+      </select>
+      <button id="gmp-sort-dir" title="Reverse the order" aria-label="Reverse the order">↓</button>
+    </div>
+
     <div class="tablewrap">
       <table id="gmp-table">
         <thead><tr>

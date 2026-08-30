@@ -1247,6 +1247,17 @@ function renderGmp(){
       th.dataset.sort === col ? (dir === 1 ? 'ascending' : 'descending') : 'none');
   });
 
+  // One sort, two controls: whichever was used, the other has to agree, or
+  // rotating the phone shows a different answer than the one on screen.
+  const sortSel = $('#gmp-sort');
+  if (sortSel && sortSel.value !== col) sortSel.value = col;
+  const dirBtn = $('#gmp-sort-dir');
+  if (dirBtn){
+    dirBtn.textContent = dir === 1 ? '↑' : '↓';
+    dirBtn.setAttribute('aria-label',
+      dir === 1 ? 'Sorted low to high — reverse it' : 'Sorted high to low — reverse it');
+  }
+
   $('#gmp-table tbody').innerHTML = sorted.map((r) => {
     const cls = r.gmp > 0 ? 'up' : r.gmp < 0 ? 'down' : 'flat';
     const ch = r.change;
@@ -2123,6 +2134,17 @@ $$('#gmp-table th[data-sort]').forEach((th) => th.addEventListener('click', () =
   renderGmp();
 }));
 
+// The stacked-table equivalent of clicking a header.
+$('#gmp-sort').addEventListener('change', (e) => {
+  state.gmpSort = { col: e.target.value, dir: state.gmpSort.dir };
+  renderGmp();
+});
+
+$('#gmp-sort-dir').addEventListener('click', () => {
+  state.gmpSort = { ...state.gmpSort, dir: -state.gmpSort.dir };
+  renderGmp();
+});
+
 $('#refresh').addEventListener('click', refresh);
 
 $('#auto').addEventListener('click', (e) => {
@@ -2241,11 +2263,28 @@ document.addEventListener('click', async (e) => {
   if (chk){
     e.stopPropagation();
     const id = getIds()[Number(chk.dataset.id)];
-    const sel = document.querySelector(`select[data-reg="${CSS.escape(chk.dataset.check)}"]`);
+    if (!id) return;
+
+    // The same issue can carry a registrar picker in the table and another in
+    // its modal. Read the one in the same block as the button that was pressed,
+    // or a stale pick from the other copy decides where this opens.
+    const scope = chk.closest('tr') || chk.closest('#modal-allot') || document;
+    const sel = scope.querySelector(`select[data-reg="${CSS.escape(chk.dataset.check)}"]`)
+      || document.querySelector(`select[data-reg="${CSS.escape(chk.dataset.check)}"]`);
     const reg = REGISTRARS[Number(sel ? sel.value : 0)];
-    const ok = await copyText(id.value);
-    toast(ok ? `${id.value} copied — paste it at ${reg.name}` : `Opening ${reg.name}`);
+
+    // Both of these have to start inside the click itself. A window opened
+    // after an await has lost its user activation and is blocked as a popup,
+    // and Safari only honours a clipboard write issued from the gesture — so
+    // awaiting the copy first was losing the tab, the paste, or both.
+    const copying = copyText(id.value);
     window.open(reg.url, '_blank', 'noopener');
+
+    // When the clipboard is refused there is still a way through: show the ID
+    // so it can be read off the screen and typed.
+    toast(await copying
+      ? `${id.value} copied — paste it at ${reg.name}`
+      : `Clipboard blocked — your ID is ${id.value}`);
     return;
   }
 
