@@ -693,7 +693,13 @@ function renderScorecard(rows){
 
 // ----------------------------------------------------- corporate offers
 
-const OFFER_TYPES = ['rights', 'buyback', 'bonus', 'split'];
+/**
+ * Only the two that ask a shareholder to do something: a rights issue can be
+ * taken up, renounced or left to lapse, and a buyback can be tendered into.
+ * A bonus or a split changes the holding on its own and needs no decision, so
+ * both belong in the calendar below rather than in a table of offers.
+ */
+const OFFER_TYPES = ['rights', 'buyback'];
 
 /**
  * A rights issue is quoted as a premium over face value, not as a price. What
@@ -722,10 +728,10 @@ function renderCorp(){
 
   $('#corp-note').textContent = actions.length
     ? (ahead
-        ? 'Rights issues, buybacks, bonuses and splits whose ex-date is still ahead.'
-        : 'Rights issues, buybacks, bonuses and splits from the last month and the next four. ' +
-          'The ex-date decides who is eligible — a rights issue usually stays open for ' +
-          'applications for a fortnight after it.')
+        ? 'Rights issues and buybacks whose ex-date is still ahead.'
+        : 'Rights issues and buybacks from the last month and the next four. The ex-date ' +
+          'decides who is eligible — a rights issue usually stays open for applications ' +
+          'for a fortnight after it.')
     : 'Corporate actions have not been fetched yet.';
 
   host.innerHTML = offers.map((a) => {
@@ -735,11 +741,11 @@ function renderCorp(){
     // share is cheaper on the exchange.
     const gap = price && cmp ? ((cmp - price) / cmp) * 100 : null;
 
-    const terms = a.type === 'rights' && a.ratioNew
-      ? `${a.ratioNew} new for every ${a.ratioHeld} held`
-      : a.type === 'bonus' && a.ratioNew
-        ? `${a.ratioNew} free for every ${a.ratioHeld} held`
-        : esc(a.detail || '—');
+    const terms = a.type === 'rights'
+      ? (a.ratioNew
+          ? `${a.ratioNew} new for every ${a.ratioHeld} held`
+          : esc(a.detail || '—'))
+      : '<span class="muted">price and size not published</span>';
 
     return `<tr>
       <td class="name">${esc(a.company || a.symbol || '—')}${
@@ -762,10 +768,21 @@ function renderCorp(){
     .filter((a) => !a.exDate || a.exDate >= today)
     .sort((a, b) => (a.exDate || '9999').localeCompare(b.exDate || '9999'));
 
+  // NSE spells a split out in a full sentence; the two face values are the
+  // whole of it, and the sentence is too long to sit in a table column.
+  const shorten = (a) => {
+    if (a.type === 'split'){
+      const m = String(a.detail || '').match(/from\s*rs?\.?\s*([\d.]+).*?to\s*rs?e?\.?\s*([\d.]+)/i);
+      if (m) return `Face value split · ₹${m[1]} → ₹${m[2]}`;
+    }
+    if (a.type === 'bonus' && a.ratioNew) return `Bonus · ${a.ratioNew} free for every ${a.ratioHeld} held`;
+    return a.detail || a.label;
+  };
+
   $('#corp-cal-table tbody').innerHTML = cal.map((a) => `
     <tr>
       <td class="name">${esc(a.company || a.symbol || '—')}</td>
-      <td data-label="Action">${esc(a.detail || a.label)}</td>
+      <td data-label="Action">${esc(shorten(a))}</td>
       <td data-label="Ex-date">${a.exDate ? fmtDate(a.exDate) : '—'}</td>
     </tr>`).join('') || `<tr><td colspan="3" class="empty">Nothing upcoming.</td></tr>`;
 }
