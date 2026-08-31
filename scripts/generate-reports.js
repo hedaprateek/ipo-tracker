@@ -62,6 +62,7 @@ const REPORT_SCHEMA = {
   required: [
     'verdict', 'confidence', 'headline', 'rationale',
     'forPoints', 'againstPoints', 'categoryAdvice', 'riskLevel', 'watchFor',
+    'businessStrengths', 'businessRisks', 'listingDay', 'longTerm',
   ],
   properties: {
     verdict: {
@@ -124,6 +125,72 @@ const REPORT_SCHEMA = {
         },
       },
     },
+    // The two above are about the application. These two are about the company
+    // it buys into, which is a different question and only answerable when the
+    // reported fundamentals were supplied.
+    businessStrengths: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 5,
+      items: { type: 'string' },
+      description:
+        'What the business itself has going for it, and what could drive growth — margins, ' +
+        'returns on capital, revenue trajectory, balance sheet, position against listed peers. ' +
+        'Ground every point in a supplied figure and name it. If no fundamentals were supplied, ' +
+        'return a single item saying the financials were not available.',
+    },
+    businessRisks: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 5,
+      items: { type: 'string' },
+      description:
+        'Key risks and concerns about the business: losses, shrinking margins, leverage, a rich ' +
+        'multiple against peers, dependence on a narrow base. Ground every point in a supplied ' +
+        'figure. A period whose expenses exceeded its revenue is a loss and must be described as ' +
+        'one. If no fundamentals were supplied, say that the business could not be assessed.',
+    },
+    listingDay: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['action', 'reason'],
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['sell', 'part-sell', 'hold', 'no-position'],
+          description:
+            "What an allotted applicant should do on listing day. 'sell' to book the listing " +
+            "gain, 'part-sell' to take some off and ride the rest, 'hold' when the case is the " +
+            "business rather than the pop, 'no-position' when the verdict was to avoid applying.",
+        },
+        reason: {
+          type: 'string',
+          description:
+            'Two sentences at most, citing the premium and the fundamentals. Say plainly that a ' +
+            'grey market premium is not a forecast of the listing price.',
+        },
+      },
+    },
+    longTerm: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['stance', 'reason'],
+      properties: {
+        stance: {
+          type: 'string',
+          enum: ['hold', 'watch', 'exit', 'not-assessable'],
+          description:
+            "Whether this is worth owning beyond listing day. 'not-assessable' when no " +
+            'fundamentals were supplied — never guess at a company you were given no figures for.',
+        },
+        reason: {
+          type: 'string',
+          description:
+            'Two to three sentences on growth, valuation against peers, and the risks that would ' +
+            'break the case. Name the figures.',
+        },
+      },
+    },
     riskLevel: { type: 'string', enum: ['low', 'moderate', 'high'] },
     watchFor: {
       type: 'array',
@@ -159,6 +226,18 @@ quality signal; a category with a LOWER multiple has BETTER allotment odds for t
 - Retail applies up to ₹2L, sHNI ₹2L-₹10L, bHNI above ₹10L. Only recommend sHNI or bHNI when the \
 figures actually justify the larger cheque; retail is the default for most investors.
 - Be direct. If the signals are weak, say avoid and explain why. Do not hedge everything into mush.
+- Keep the two questions apart. forPoints and againstPoints are about whether to APPLY — demand, \
+allotment odds, the premium, the size of the cheque. businessStrengths and businessRisks are about \
+the COMPANY — what it earns, what it is priced at, what could break it. A fat premium is a reason \
+to apply, never a business strength; a shrinking margin is a business risk, not an argument about \
+allotment.
+- listingDay and longTerm are separate calls and may disagree with each other and with the verdict. \
+A weak business at a fat premium can be worth applying to and selling on day one; a fair business \
+at a thin premium can be worth holding. Say so when that is the case, rather than making all three \
+agree for the sake of consistency.
+- Where no "Reported fundamentals" block appears you were given no financials for this company. \
+Say so in businessStrengths and businessRisks, set longTerm.stance to 'not-assessable', and do not \
+fill the gap from memory or from the sector.
 - This is an automated read of public market signals for one person's own use. It is not \
 personalised investment advice, and the dashboard already tells the reader that — so do not \
 spend output on disclaimers. Spend it on the numbers.`;
