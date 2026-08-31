@@ -36,6 +36,8 @@ const state = {
   // issue stays open for applications for a fortnight or so afterwards, so
   // hiding everything past its ex-date would hide offers still worth acting on.
   corpWhen: 'all',
+  // Everything open, unless the reader narrows to the ones that shut tonight.
+  todayWhen: 'open',
 };
 
 const $ = (s, r) => (r || document).querySelector(s);
@@ -870,6 +872,8 @@ function renderDaybar(t){
   cta.textContent = closingToday.length
     ? `Which to apply for — ${closingToday.length} close${closingToday.length === 1 ? 's' : ''} today →`
     : 'Which to apply for today →';
+  // The label names the issues shutting tonight, so it has to arrive at them.
+  cta.dataset.scope = closingToday.length ? 'closing' : 'open';
 }
 
 function renderIpos(){
@@ -1024,8 +1028,24 @@ function card(r, t){
 
 function renderToday(){
   const t = todayISO();
-  const rows = allIpos()
-    .filter((r) => r.status === 'open')
+  const openAll = allIpos().filter((r) => r.status === 'open');
+  const closingCount = openAll.filter((r) => r.end === t).length;
+
+  // Offering a scope that would empty the view helps nobody: when nothing
+  // closes today the control is not shown, and the scope falls back to open.
+  const canClose = closingCount > 0;
+  if (!canClose && state.todayWhen === 'closing') state.todayWhen = 'open';
+
+  const whenSeg = $('#today-when');
+  if (whenSeg){
+    whenSeg.hidden = !canClose;
+    $$('#today-when button').forEach((b) =>
+      b.classList.toggle('on', b.dataset.todaywhen === state.todayWhen));
+    const closeBtn = $('#today-when button[data-todaywhen="closing"]');
+    if (closeBtn) closeBtn.textContent = `Closing today · ${closingCount}`;
+  }
+
+  const rows = todayScope()
     .sort((a, b) => {
       // Closing today comes first — that is the decision that expires.
       const ad = a.end ? daysBetween(t, a.end) : 99;
@@ -1034,11 +1054,14 @@ function renderToday(){
       return (b.gmpPct ?? -1) - (a.gmpPct ?? -1);
     });
 
-  const closingToday = rows.filter((r) => r.end === t).length;
+  const closing = state.todayWhen === 'closing';
   $('#today-title').textContent = `Today · ${fmtDate(t)}`;
   $('#today-sub').textContent = rows.length
-    ? `${rows.length} IPO${rows.length === 1 ? '' : 's'} open for application` +
-      (closingToday ? ` · ${closingToday} clos${closingToday === 1 ? 'es' : 'e'} today` : '')
+    ? (closing
+        ? `${rows.length} IPO${rows.length === 1 ? '' : 's'} clos${rows.length === 1 ? 'es' : 'e'} ` +
+          'for application today — after tonight these cannot be applied for at all.'
+        : `${openAll.length} IPO${openAll.length === 1 ? '' : 's'} open for application` +
+          (closingCount ? ` · ${closingCount} clos${closingCount === 1 ? 'es' : 'e'} today` : ''))
     : 'No IPOs are open for application right now.';
 
   const target = load(LS.aiTarget, 'google');
@@ -1047,7 +1070,9 @@ function renderToday(){
         AI_TARGETS.map((a) =>
           `<option value="${a.id}" ${a.id === target ? 'selected' : ''}>${a.label}</option>`).join('')
       }</select>
-      <button class="primary" data-ai="all">Ask about all ${rows.length}</button>
+      <button class="primary" data-ai="all">${closing
+        ? `Apply or skip — ask about ${rows.length === 1 ? 'it' : `all ${rows.length}`}`
+        : `Ask about all ${rows.length}`}</button>
       <button data-copy="all">Copy details</button>`
     : '';
 
@@ -1254,9 +1279,28 @@ function noRecReason(r, opts){
 }
 
 /** The rows a Today action applies to: one IPO, or every open one. */
-function todayRows(which){
+/**
+ * The issues the Today view is currently about.
+ *
+ * "Closing today" is the decision that expires: an application not made before
+ * the book shuts cannot be made at all. It is a scope, not a sort, so it has to
+ * narrow the comparison table, the cards and the AI brief alike — a brief that
+ * covered issues the reader has days to think about would bury the ones that
+ * do not.
+ */
+function todayScope(){
   const open = allIpos().filter((r) => r.status === 'open');
-  return which === 'all' ? open : open.filter((r) => r.key === which);
+  if (state.todayWhen !== 'closing') return open;
+  const t = todayISO();
+  return open.filter((r) => r.end === t);
+}
+
+function todayRows(which){
+  const scoped = todayScope();
+  if (which === 'all') return scoped;
+  // A card's own button always means that card, even if the scope changed
+  // underneath it.
+  return allIpos().filter((r) => r.status === 'open' && r.key === which);
 }
 
 // Browsers and servers start truncating URLs somewhere past 8KB. The brief
@@ -1755,12 +1799,24 @@ function recommendCategory(r){
  */
 function aiPrompt(rows){
   const t = todayISO();
-  const lines = [
-    `I am a retail investor in India deciding which IPOs to apply for today (${fmtDate(t)}).`,
-    `Here are the issues currently open, with live figures from NSE and IPO Watch.`,
-    `Application categories: Retail up to ₹2,00,000, sHNI ₹2,00,000–₹10,00,000, bHNI above ₹10,00,000.`,
-    '',
-  ];
+  // Every issue in the set shuts tonight, so the question is not which to
+  // prefer over the coming week — it is a verdict on each, now.
+  const allClosingToday = rows.length > 0 && rows.every((r) => r.end === t);
+
+  const lines = allClosingToday
+    ? [
+        `I am a retail investor in India. Every IPO below closes for applications TODAY (${fmtDate(t)}).`,
+        `After tonight I cannot apply to any of them, so I need a decision on each one now.`,
+        `Live figures from NSE and IPO Watch follow.`,
+        `Application categories: Retail up to ₹2,00,000, sHNI ₹2,00,000–₹10,00,000, bHNI above ₹10,00,000.`,
+        '',
+      ]
+    : [
+        `I am a retail investor in India deciding which IPOs to apply for today (${fmtDate(t)}).`,
+        `Here are the issues currently open, with live figures from NSE and IPO Watch.`,
+        `Application categories: Retail up to ₹2,00,000, sHNI ₹2,00,000–₹10,00,000, bHNI above ₹10,00,000.`,
+        '',
+      ];
 
   for (const r of rows){
     lines.push(`## ${r.name}${r.board === 'SME' ? ' (SME)' : ''}`);
@@ -1802,18 +1858,40 @@ function aiPrompt(rows){
   // A per-IPO verdict is not the question when several are open at once. The
   // real decision is which to fund first with limited money, so ask for a
   // ranking and an allocation rather than N independent assessments.
+  if (allClosingToday){
+    lines.push(
+      'For EACH issue above, in this order, answer the two questions that matter before tonight:',
+      '',
+      '1. APPLY or SKIP — a straight verdict, no hedging.',
+      '2. If APPLY: which category (Retail, sHNI or bHNI), the exact amount that category needs',
+      '   at the cap price, and why that category rather than the others. Pick the category on',
+      '   allotment odds and what the cheque buys, not on how much I could theoretically bid.',
+      '3. One short line of reasoning, naming the figure that decided it.',
+      '',
+      'Lead with a table: IPO | Apply or skip | Category | Amount needed | Why.',
+      budget
+        ? `Then, given my ₹${budget.toLocaleString('en-IN')} budget: if I cannot fund every APPLY, which ones do I fund first, and what gets dropped?`
+        : 'Then: if I can only fund two or three of the APPLY verdicts, which come first?',
+      'Finish with anything in these numbers that looks like a warning sign worth pausing on.',
+      '',
+    );
+  } else {
+    lines.push(
+      'Answer as a comparison across all of these, not one IPO at a time:',
+      '',
+      '1. A ranked table, best first, with these columns: IPO | Apply or skip | Which category',
+      '   | Minimum needed | Why (one short line). Rank on the strength of the case for applying,',
+      '   not on issue size.',
+      budget
+        ? `2. Given my ₹${budget.toLocaleString('en-IN')} budget, which applications should I actually fund, in what order, and what does that leave unfunded?`
+        : '2. If I can only fund two or three applications, which ones first, and why those?',
+      '3. Which of these should I skip outright, and what specifically makes them weak?',
+      '4. Anything in these numbers that looks like a warning sign worth pausing on.',
+      '',
+    );
+  }
+
   lines.push(
-    'Answer as a comparison across all of these, not one IPO at a time:',
-    '',
-    '1. A ranked table, best first, with these columns: IPO | Apply or skip | Which category',
-    '   | Minimum needed | Why (one short line). Rank on the strength of the case for applying,',
-    '   not on issue size.',
-    budget
-      ? `2. Given my ₹${budget.toLocaleString('en-IN')} budget, which applications should I actually fund, in what order, and what does that leave unfunded?`
-      : '2. If I can only fund two or three applications, which ones first, and why those?',
-    '3. Which of these should I skip outright, and what specifically makes them weak?',
-    '4. Anything in these numbers that looks like a warning sign worth pausing on.',
-    '',
     'Rules for reading the figures: a category with a LOWER subscription multiple has BETTER',
     'allotment odds, because allotment is a lottery once a category is oversubscribed. Retail',
     'applies up to ₹2,00,000, sHNI ₹2,00,000-₹10,00,000, bHNI above ₹10,00,000. Grey market',
@@ -2169,6 +2247,15 @@ function bindSeg(sel, key){
 }
 bindSeg('[data-board]', 'board');
 bindSeg('[data-status]', 'status');
+
+$('#daybar-cta').addEventListener('click', (e) => {
+  state.todayWhen = e.currentTarget.dataset.scope || 'open';
+});
+
+$$('#today-when button').forEach((b) => b.addEventListener('click', () => {
+  state.todayWhen = b.dataset.todaywhen;
+  renderToday();
+}));
 
 // A count in the day strip is also the way to the rows it counts.
 $('#daybar-stats').addEventListener('click', (e) => {

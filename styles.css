@@ -313,6 +313,10 @@ code {
 }
 .today-head h2 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
 .today-head .chart-note { margin: 3px 0 0; font-size: 12.5px; color: var(--dim); }
+#today-when { margin-top: 9px; }
+#today-when button { font-size: 12.5px; padding: 5px 11px; }
+/* The urgent scope stays legible as the urgent one even while selected. */
+#today-when button[data-todaywhen="closing"]:not(.on) { color: var(--critical); }
 
 .today-card {
   background: var(--panel);
