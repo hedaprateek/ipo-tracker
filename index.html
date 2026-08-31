@@ -30,8 +30,7 @@
 </details>
 
 <nav class="tabs" aria-label="Views">
-  <button data-tab="today" class="on">Today</button>
-  <button data-tab="ipos">IPOs</button>
+  <button data-tab="ipos" class="on">IPOs</button>
   <button data-tab="gmp">GMP<span class="on-wide"> &amp; Trend</span></button>
   <button data-tab="allot"><span class="on-wide">My </span>Applications</button>
   <button data-tab="corp"><span class="on-wide">Corporate </span>Offers</button>
@@ -42,6 +41,8 @@
 
   <!-- What can I actually act on today, and under which category. -->
   <section id="tab-today">
+    <!-- Today has no tab of its own, so it carries its own way back. -->
+    <a class="backlink" href="#ipos">‹ All IPOs</a>
     <div class="today-head">
       <div class="grow">
         <h2 id="today-title">Today</h2>
@@ -87,6 +88,13 @@
   </div>
 
   <section id="tab-ipos">
+    <!-- The state of the day before the list of it. Each count filters the
+         list below; the action on the right is the way into the Today view,
+         which is a question rather than a place and so is not a tab. -->
+    <div class="daybar" id="daybar">
+      <div class="daybar-stats" id="daybar-stats"></div>
+      <a class="daybar-cta" id="daybar-cta" href="#today" hidden></a>
+    </div>
     <div id="ipo-groups"></div>
   </section>
 

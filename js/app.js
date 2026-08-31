@@ -820,6 +820,58 @@ function applyFilters(rows){
 
 // -------------------------------------------------------------- rendering
 
+/**
+ * The state of the day, above the list of it.
+ *
+ * The landing view opened straight into a wall of cards, so the two facts that
+ * decide whether to act at all — how many issues are open, and how many close
+ * today — had to be found by reading. They are counted here instead, against
+ * the unfiltered set, so the strip describes the market rather than the search
+ * box. Each count is a filter, so a number is also the way to the rows behind
+ * it.
+ */
+function renderDaybar(t){
+  const host = $('#daybar-stats');
+  if (!host) return;
+
+  const all = allIpos();
+  const open = all.filter((r) => r.status === 'open');
+  const closingToday = open.filter((r) => r.end === t);
+  const upcoming = all.filter((r) => r.status === 'upcoming');
+  const awaiting = all.filter((r) => r.status === 'pending');
+
+  // The highest premium on anything still open is the one number a reader
+  // wants before deciding whether today is worth their attention.
+  const best = open
+    .filter((r) => r.gmpPct !== null)
+    .sort((a, b) => b.gmpPct - a.gmpPct)[0] || null;
+
+  const cells = [
+    { key: 'open',     n: open.length,      label: 'open now' },
+    { key: 'open',     n: closingToday.length, label: 'closing today', urgent: true },
+    { key: 'upcoming', n: upcoming.length,  label: 'upcoming' },
+    { key: 'closed',   n: awaiting.length,  label: 'awaiting listing' },
+  ].filter((c) => c.n > 0);
+
+  host.innerHTML = cells.map((c) => `
+    <button class="daycell${c.urgent ? ' urgent' : ''}" data-daystatus="${c.key}">
+      <span class="daycell-n">${c.n}</span>
+      <span class="daycell-label">${c.label}</span>
+    </button>`).join('') +
+    (best ? `<div class="daycell daycell-quiet">
+      <span class="daycell-n ${moveClass(best.gmpPct)}">${signed(best.gmpPct)}</span>
+      <span class="daycell-label">best premium · ${esc(best.name.split(' ').slice(0, 2).join(' '))}</span>
+    </div>` : '');
+
+  // The Today view answers "which of these do I apply for, and under what
+  // category" — only worth offering when something is actually open.
+  const cta = $('#daybar-cta');
+  cta.hidden = !open.length;
+  cta.textContent = closingToday.length
+    ? `Which to apply for — ${closingToday.length} close${closingToday.length === 1 ? 's' : ''} today →`
+    : 'Which to apply for today →';
+}
+
 function renderIpos(){
   const t = todayISO();
   const rows = applyFilters(allIpos());
@@ -853,6 +905,8 @@ function renderIpos(){
 
   const total = groups.reduce((n,g) => n + g.rows.length, 0);
   $('#result-count').textContent = `${total} IPO${total===1?'':'s'}`;
+
+  renderDaybar(t);
 
   // A group with nothing in it is noise unless it is the only one asked for.
   const shown = groups.filter((g) => g.rows.length || groups.length === 1);
@@ -928,9 +982,23 @@ function bottomLine(r){
         : ''}
     </div>`;
   }
+  // Lead with the percentage, not the rupees. A ₹60 premium on an ₹82 share and
+  // a ₹370 premium on a ₹429 share are 73% and 86% — but on a rupee scale the
+  // cheaper issue looks six times worse than it is, and these cards exist to be
+  // compared with each other. The trend chart is plotted the same way.
+  if (r.gmp === null){
+    return `<div class="gmpline">
+      <span class="gmpval flat">—</span>
+      <span class="gain">no premium quoted</span>
+    </div>`;
+  }
+
   return `<div class="gmpline">
-    <span class="gmpval ${moveClass(r.gmp ?? 0)}">${r.gmp === null ? '—' : money(r.gmp)}</span>
-    <span class="gain">GMP${r.gmpPct !== null ? ` · ${signed(r.gmpPct)}` : ''}</span>
+    <span class="gmpval ${moveClass(r.gmpPct ?? r.gmp)}">${
+      r.gmpPct !== null ? signed(r.gmpPct) : money(r.gmp)}</span>
+    <span class="gain">${r.gmpPct !== null
+      ? `implied gain · ${money(r.gmp)} GMP`
+      : 'GMP'}</span>
     ${sparkline(r.histKey)}
   </div>`;
 }
@@ -2060,7 +2128,9 @@ function render(){
 
 const TABS = ['today','ipos','gmp','allot','corp'];
 function showTab(name){
-  if (!TABS.includes(name)) name = 'today';
+  // IPOs is the landing view: the list is what the app is for, and Today is a
+  // question asked of it rather than the default way in.
+  if (!TABS.includes(name)) name = 'ipos';
   $$('.tabs button').forEach((x) => x.classList.toggle('on', x.dataset.tab === name));
   TABS.forEach((id) => { $('#tab-'+id).hidden = (id !== name); });
   // Today and My Applications answer a fixed question; the filter row would
@@ -2099,6 +2169,18 @@ function bindSeg(sel, key){
 }
 bindSeg('[data-board]', 'board');
 bindSeg('[data-status]', 'status');
+
+// A count in the day strip is also the way to the rows it counts.
+$('#daybar-stats').addEventListener('click', (e) => {
+  const cell = e.target.closest('[data-daystatus]');
+  if (!cell) return;
+  const status = cell.dataset.daystatus;
+  state.filters.status = status;
+  $$('[data-status]').forEach((x) => x.classList.toggle('on', x.dataset.value === status));
+  save(LS.filters, state.filters);
+  renderIpos();
+  renderGmp();
+});
 
 $$('#corp-when button').forEach((b) => b.addEventListener('click', () => {
   state.corpWhen = b.dataset.when;

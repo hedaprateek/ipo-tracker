@@ -957,6 +957,74 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 #modal-fundamentals .tablewrap { margin-top: 10px; }
 #modal-fundamentals .facts { margin-bottom: 4px; }
 
+/* ------------------------------------------------------------- day strip */
+
+.daybar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 14px 0 4px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.daybar-stats { display: flex; align-items: stretch; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; }
+
+.daycell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 14px 4px 0;
+  margin-right: 10px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.daycell:last-child { border-right: 0; margin-right: 0; }
+.daycell-quiet { cursor: default; }
+.daycell:not(.daycell-quiet):hover .daycell-n { color: var(--accent); }
+
+/* Proportional figures: tabular digits read loose at this size. */
+.daycell-n { font-size: 20px; font-weight: 650; color: var(--ink); line-height: 1.15; }
+.daycell-label { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.daycell.urgent .daycell-n { color: var(--critical); }
+.daycell-n.up { color: var(--good); }
+.daycell-n.down { color: var(--critical); }
+
+/* The one action on the strip, so it does not read as a fifth statistic. */
+.daybar-cta {
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.daybar-cta:hover { filter: brightness(1.08); }
+
+.backlink {
+  display: inline-block;
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--dim);
+  text-decoration: none;
+}
+.backlink:hover { color: var(--accent); }
+
+@media (max-width: 560px) {
+  .daybar { padding: 10px 12px; gap: 10px; }
+  .daycell { padding-right: 10px; margin-right: 6px; }
+  .daycell-n { font-size: 17px; }
+  .daybar-cta { width: 100%; text-align: center; }
+}
+
 /* ------------------------------------------------------ corporate offers */
 
 #corp-table td.num, #corp-table th.num { font-variant-numeric: tabular-nums; }
