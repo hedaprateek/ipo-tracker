@@ -518,6 +518,126 @@ function scatterChart(wrap, points, opts) {
   }, { passive: true });
 }
 
-global.Charts = { lineChart, barChart, scatterChart, ticks, fmtNum };
+
+// ------------------------------------------------------- grouped bar chart
+
+/**
+ * groups: [{ label, values: [n, n, ...] }]   series: [{ name, color }]
+ *
+ * Vertical bars, one cluster per period. Built for two or three series that
+ * share a unit — revenue against expense in crore — so they can share one
+ * axis honestly. Two measures on different scales belong in two charts, not
+ * on a second y-axis.
+ */
+function groupedBars(wrap, groups, series, opts) {
+  opts = opts || {};
+  wrap.textContent = '';
+  wrap.classList.add('chart-wrap');
+
+  if (!groups.length) {
+    wrap.innerHTML = '<p class="chart-empty">' +
+      (opts.emptyText || 'No figures published yet.') + '</p>';
+    return;
+  }
+
+  const all = groups.flatMap((g) => g.values.filter((v) => v !== null && v !== undefined));
+  const hiVal = Math.max(...all, 0);
+  const yTicks = ticks(0, hiVal, 4);
+  const hi = Math.max(hiVal, yTicks[yTicks.length - 1]);
+
+  const padT = 16, padB = 34, padL = 46, padR = 8;
+  const W = opts.width || wrap.clientWidth || 520;
+  const H = opts.height || 190;
+  const plotW = Math.max(10, W - padL - padR);
+  const plotH = Math.max(10, H - padT - padB);
+  const Y = (v) => padT + plotH - (v / hi) * plotH;
+
+  const svg = el('svg', {
+    viewBox: '0 0 ' + W + ' ' + H, width: '100%', height: H,
+    role: 'img', 'aria-label': opts.ariaLabel || 'Grouped bar chart',
+  }, wrap);
+
+  // Recessive grid, and the value axis labelled rather than every bar.
+  for (const v of yTicks) {
+    el('line', {
+      x1: padL, x2: padL + plotW, y1: Y(v), y2: Y(v),
+      stroke: 'var(--chart-grid)', 'stroke-width': 1,
+    }, svg);
+    el('text', {
+      x: padL - 7, y: Y(v) + 3.5, 'text-anchor': 'end', class: 'chart-tick',
+    }, svg).textContent = fmtNum(v);
+  }
+
+  const tip = makeTooltip(wrap);
+  const bandW = plotW / groups.length;
+  const n = series.length;
+  // 2px of surface between adjacent bars, so touching fills stay separable.
+  const gap = 2;
+  const clusterW = Math.min(bandW * 0.72, 34 * n + gap * (n - 1));
+  const barW = Math.max(4, (clusterW - gap * (n - 1)) / n);
+
+  groups.forEach((g, gi) => {
+    const cx = padL + bandW * gi + bandW / 2;
+    const x0 = cx - clusterW / 2;
+
+    el('text', {
+      x: cx, y: H - 12, 'text-anchor': 'middle', class: 'chart-tick',
+    }, svg).textContent = g.label;
+
+    series.forEach((sr, si) => {
+      const v = g.values[si];
+      if (v === null || v === undefined) return;
+      const x = x0 + si * (barW + gap);
+      const y = Y(v);
+      const h = Math.max(2, padT + plotH - y);
+      // 4px rounded ends anchored to the baseline: the radius is capped at
+      // half the bar height so a short bar does not turn into a lozenge.
+      const r = Math.min(4, h / 2, barW / 2);
+      const rect = el('rect', {
+        x: x, y: y, width: barW, height: h, rx: r, ry: r,
+        fill: sr.color, 'data-series': sr.name,
+      }, svg);
+      rect.style.cursor = 'default';
+
+      // Direct labels: three periods by two series is six numbers, which is
+      // still readable. Anything denser would be hover-only.
+      if (opts.label !== false && groups.length * n <= 8) {
+        el('text', {
+          x: x + barW / 2, y: y - 5, 'text-anchor': 'middle', class: 'chart-tick',
+        }, svg).textContent = fmtNum(v);
+      }
+
+      const show = () => {
+        const box = wrap.getBoundingClientRect();
+        const rb = rect.getBoundingClientRect();
+        tip.show(
+          '<b>' + g.label + '</b><br>' + sr.name + ': ' +
+            (opts.prefix || '') + fmtNum(v) + (opts.suffix || ''),
+          rb.left - box.left + rb.width / 2, rb.top - box.top);
+      };
+      rect.addEventListener('mouseenter', show);
+      rect.addEventListener('mouseleave', () => tip.hide());
+      rect.addEventListener('touchstart', show, { passive: true });
+    });
+  });
+
+  el('line', {
+    x1: padL, x2: padL + plotW, y1: padT + plotH, y2: padT + plotH,
+    stroke: 'var(--chart-axis)', 'stroke-width': 1,
+  }, svg);
+
+  // A legend whenever there is more than one series; a lone series is named
+  // by the card title instead.
+  if (n > 1) {
+    const leg = document.createElement('div');
+    leg.className = 'chart-legend';
+    leg.innerHTML = series.map((sr) =>
+      '<span class="chart-key"><i style="background:' + sr.color + '"></i>' +
+      sr.name + '</span>').join('');
+    wrap.appendChild(leg);
+  }
+}
+
+global.Charts = { lineChart, barChart, scatterChart, groupedBars, ticks, fmtNum };
 
 })(window);

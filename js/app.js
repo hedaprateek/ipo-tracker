@@ -1687,10 +1687,162 @@ function renderFundamentals(host, r){
     [f.lockIn.d30 && `${esc(f.lockIn.d30)} (half)`, f.lockIn.d90 && `${esc(f.lockIn.d90)} (rest)`]
       .filter(Boolean).join(', ')}.</p>` : '';
 
+  /* The table below says the same thing, but a reader has to do the arithmetic
+     across three rows to see it. These two charts show it: revenue roughly
+     flat while expense climbs, and the bottom line falling away faster than
+     that gap — which is the part worth noticing. */
+  const chartable = full.filter((x) => x.revenue !== null && x.expense !== null);
+  const figures = chartable.length >= 2 ? `
+    <div class="fin-figs">
+      <figure>
+        <figcaption>Revenue and expense <span>₹ crore</span></figcaption>
+        <div id="fin-trend"></div>
+      </figure>
+      <figure>
+        <figcaption>Net loss <span>₹ crore</span></figcaption>
+        <div id="fin-bottom"></div>
+        <p class="chart-note">Shown apart from the two above, not as the gap between
+          them: the reported bottom line also carries items below the operating
+          line, so expense minus revenue does not reproduce it.</p>
+      </figure>
+    </div>` : '';
+
   host.innerHTML =
-    (html ? `<dl class="facts">${html}</dl>` : '') + warn + table + peers + lock +
+    (html ? `<dl class="facts">${html}</dl>` : '') + warn + figures + table + peers + lock +
     `<p class="fact-note">Figures transcribed from the prospectus by
       <a href="${esc(f.source)}" target="_blank" rel="noopener">IPO Watch ↗</a>.</p>`;
+
+  if (chartable.length >= 2) {
+    const yr = (p) => "FY" + String(p).slice(-2);
+    Charts.groupedBars($("#fin-trend", host),
+      chartable.map((x) => ({ label: yr(x.period), values: [x.revenue, x.expense] })),
+      // Fixed order, never cycled: revenue always series-1, expense series-2.
+      [{ name: "Revenue", color: "var(--series-1)" },
+       { name: "Expense", color: "var(--series-2)" }],
+      { prefix: "₹", suffix: " cr", height: 190,
+        ariaLabel: "Revenue against expense, " + chartable.map((x) => yr(x.period)).join(" to ") });
+
+    // A single series, so no legend — the caption names it. Red because a
+    // widening loss is a state, and the caption says so in words too.
+    Charts.groupedBars($("#fin-bottom", host),
+      chartable.map((x) => ({ label: yr(x.period), values: [x.spentMore ? x.pat : null] })),
+      [{ name: "Net loss", color: "var(--critical)" }],
+      { prefix: "₹", suffix: " cr", height: 190,
+        emptyText: "No loss-making year in the periods shown.",
+        ariaLabel: "Net loss by year" });
+  }
+}
+
+const SCHEDULE_STEPS = [
+  ['open',      'Bidding opens'],
+  ['close',     'Bidding closes'],
+  ['allotment', 'Allotment decided'],
+  ['refunds',   'Refunds initiated'],
+  ['demat',     'Shares credited'],
+  ['listing',   'Lists on the exchange'],
+];
+
+/**
+ * The whole schedule, not just the two ends of it.
+ *
+ * NSE publishes the bidding window and the listing date and nothing between,
+ * which leaves the questions an applicant actually asks unanswered: when is
+ * allotment decided, when does the money come back if I get nothing. Those
+ * dates sit on the same prospectus summary the financials come from.
+ */
+function renderSchedule(host, r){
+  if (!host) return;
+  const card = host.closest('.chart-card');
+  const tl = state.fundamentals[r.key]?.timeline;
+
+  if (!tl || !Object.keys(tl).length){
+    if (card) card.hidden = true;
+    return;
+  }
+  if (card) card.hidden = false;
+
+  // "September 3, 2026" parses to local midnight; reading it back through
+  // toISOString would shift it into the previous day everywhere east of UTC,
+  // so the calendar date is taken from local components — the same way
+  // todayISO builds the day to compare it against.
+  const asISO = (text) => {
+    const d = new Date(text);
+    return Number.isFinite(d.getTime())
+      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      : null;
+  };
+
+  const t = todayISO();
+  const steps = SCHEDULE_STEPS
+    .filter(([k]) => tl[k])
+    .map(([k, label]) => {
+      const iso = asISO(tl[k]);
+      return { key: k, label, when: tl[k], iso, done: iso !== null && iso < t };
+    });
+
+  // The next step still to happen is the one worth drawing attention to.
+  const nextIdx = steps.findIndex((s) => !s.done);
+  const shown = (s) => (s.iso ? fmtDate(s.iso) : s.when);
+
+  host.innerHTML = `<ol class="timeline">${steps.map((s, i) => `
+    <li class="tl-step${s.done ? ' done' : ''}${i === nextIdx ? ' next' : ''}">
+      <span class="tl-dot" aria-hidden="true"></span>
+      <span class="tl-label">${esc(s.label)}</span>
+      <span class="tl-date">${esc(shown(s))}</span>
+    </li>`).join('')}</ol>
+    ${nextIdx >= 0 ? `<p class="fact-note">Next: ${esc(steps[nextIdx].label.toLowerCase())}
+      on ${esc(shown(steps[nextIdx]))}.</p>` : ''}`;
+}
+
+/**
+ * How the book is carved up, what the money is for, and what it costs the
+ * existing owners. The reservation is the part that bears on odds: a retail
+ * pool of 10% is a very different queue from one of 35%.
+ */
+function renderStructure(host, r){
+  if (!host) return;
+  const card = host.closest('.chart-card');
+  const f = state.fundamentals[r.key];
+
+  if (!f || (!f.reservations && !f.objects && !f.shareholding)){
+    if (card) card.hidden = true;
+    return;
+  }
+  if (card) card.hidden = false;
+
+  const res = f.reservations
+    ? `<h5 class="report-section">Reserved for each category</h5>
+       <div class="resbar">${f.reservations.map((x, i) => `
+         <div class="resbar-seg" style="flex:${x.pct}"
+              title="${esc(x.category)} · ${x.pct}%">
+           <span class="resbar-fill s${(i % 6) + 1}"></span>
+         </div>`).join('')}</div>
+       <dl class="facts resbar-key">${f.reservations.map((x, i) => `
+         <div class="fact">
+           <dt><span class="tip-swatch s${(i % 6) + 1}"></span>${esc(x.category)}</dt>
+           <dd>${x.pct}%</dd>
+           ${x.shares ? `<p class="fact-note">${x.shares.toLocaleString('en-IN')} shares</p>` : ''}
+         </div>`).join('')}</dl>`
+    : '';
+
+  const obj = f.objects
+    ? `<h5 class="report-section">What the money is for</h5>
+       <ul class="objects">${f.objects.map((o) => `
+         <li><span>${esc(o.purpose)}</span>${
+           o.crore !== null ? `<b>₹${o.crore} cr</b>` : '<i>balance</i>'}</li>`).join('')}</ul>`
+    : '';
+
+  // Promoter dilution: how much of the company the founders still hold after.
+  const sh = f.shareholding?.some((x) => x.postPct !== null)
+    ? `<h5 class="report-section">Ownership before and after</h5>
+       <dl class="facts">${f.shareholding.map((x) => `
+         <div class="fact">
+           <dt>${esc(x.who.replace(/\*$/, ''))}</dt>
+           <dd>${x.prePct ?? '—'}% → ${x.postPct ?? '—'}%</dd>
+         </div>`).join('')}</dl>`
+    : '';
+
+  host.innerHTML = res + obj + sh;
 }
 
 /** Direct links to the official documents, when NSE published them. */
@@ -1968,6 +2120,13 @@ function openModal(key){
 
         <div id="modal-report"></div>
 
+        <div class="chart-card" hidden>
+          <h4>Timetable</h4>
+          <p class="chart-note">NSE publishes the bidding window and the listing date. The dates in
+            between — when allotment is decided, when refunds go out — come from the prospectus.</p>
+          <div id="modal-schedule"></div>
+        </div>
+
         <!-- The fundamentals sit next to the verdict that cites them, ahead of
              the application arithmetic, which is a separate question. -->
         <div class="chart-card">
@@ -1975,6 +2134,13 @@ function openModal(key){
           <p class="chart-note">The other half of the decision: what the business earns, what it is
             priced at, and how that sits against companies already listed.</p>
           <div id="modal-fundamentals"></div>
+        </div>
+
+        <div class="chart-card" hidden>
+          <h4>How the issue is structured</h4>
+          <p class="chart-note">Who the shares are reserved for, what the money raised is for, and
+            what the founders are left holding.</p>
+          <div id="modal-structure"></div>
         </div>
 
         <div class="chart-card">
@@ -2037,6 +2203,8 @@ function openModal(key){
 
   renderFacts($('#modal-facts', back), r);
   renderFundamentals($('#modal-fundamentals', back), r);
+  renderSchedule($('#modal-schedule', back), r);
+  renderStructure($('#modal-structure', back), r);
 
   const drawLine = () => {
     const full = historyPoints(r.histKey);

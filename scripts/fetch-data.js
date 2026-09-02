@@ -119,7 +119,9 @@ function writeJson(file, value) {
         company: r.company,
         page: gmpRows.find((g) => g.key === sources.nameKey(r.company))?.page || null,
       }))
-      .filter((it) => it.key && !known[it.key]);
+      // Re-fetch anything captured before the extractor learned its current
+      // set of fields, so a new field reaches the issues already on file.
+      .filter((it) => it.key && known[it.key]?.v !== sources.FUNDAMENTALS_VERSION);
 
     if (wanted.length) {
       try {

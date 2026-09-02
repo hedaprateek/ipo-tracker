@@ -1214,6 +1214,82 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .plan-tag.part-sell, .plan-tag.watch { border-color: var(--series-1); color: var(--series-1); }
 .plan-tag.no-position, .plan-tag.not-assessable { color: var(--faint); }
 
+/* ------------------------------------------------------------- timetable */
+
+.timeline { list-style: none; margin: 4px 0 0; padding: 0; }
+.tl-step {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  position: relative;
+  font-size: 13px;
+  color: var(--dim);
+}
+/* The rail joining the dots, drawn behind them and stopped at the last step. */
+.tl-step::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  width: 2px;
+  height: 100%;
+  background: var(--line);
+}
+.tl-step:last-child::before { display: none; }
+
+.tl-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--panel);
+  z-index: 1;
+}
+.tl-step.done { color: var(--ink-2); }
+.tl-step.done .tl-dot { background: var(--good); border-color: var(--good); }
+.tl-step.done::before { background: var(--good); opacity: 0.45; }
+/* The step that has not happened yet but is next is the one being waited on. */
+.tl-step.next { color: var(--ink); font-weight: 600; }
+.tl-step.next .tl-dot { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.tl-date { font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--faint); }
+.tl-step.next .tl-date, .tl-step.done .tl-date { color: var(--dim); }
+
+/* --------------------------------------------------------- issue structure */
+
+/* One bar the width of the book, split by who may bid for what. */
+.resbar { display: flex; gap: 2px; height: 12px; margin: 4px 0 10px; }
+.resbar-seg { min-width: 4px; display: flex; }
+.resbar-fill { flex: 1; border-radius: 3px; }
+.resbar-fill.s1 { background: var(--series-1); }
+.resbar-fill.s2 { background: var(--series-2); }
+.resbar-fill.s3 { background: var(--series-3); }
+.resbar-fill.s4 { background: var(--series-4); }
+.resbar-fill.s5 { background: var(--series-5); }
+.resbar-fill.s6 { background: var(--series-6); }
+.resbar-key dt { display: flex; align-items: center; gap: 6px; }
+.tip-swatch.s1 { background: var(--series-1); }
+.tip-swatch.s2 { background: var(--series-2); }
+.tip-swatch.s3 { background: var(--series-3); }
+.tip-swatch.s4 { background: var(--series-4); }
+.tip-swatch.s5 { background: var(--series-5); }
+.tip-swatch.s6 { background: var(--series-6); }
+
+.objects { list-style: none; margin: 4px 0 0; padding: 0; font-size: 13px; }
+.objects li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--dim);
+}
+.objects li:last-child { border-bottom: 0; }
+.objects b { color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.objects i { color: var(--faint); font-size: 12px; white-space: nowrap; }
+
 .prospectus p { margin: 6px 0 0; color: var(--dim); font-size: 12.5px; line-height: 1.5; }
 .prospectus a { font-weight: 600; }
 
@@ -1273,4 +1349,50 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+}
+
+/* ---------------------------------------------- financial figures (charts) */
+/* Two small multiples rather than one chart with a second y-axis: revenue and
+   expense share a scale and belong together; the bottom line does not. */
+.fin-figs {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin: 14px 0 16px;
+}
+@media (min-width: 720px) {
+  .fin-figs { grid-template-columns: 1fr 1fr; gap: 22px; }
+}
+.fin-figs figure { margin: 0; min-width: 0; }
+.fin-figs figcaption {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+/* The unit belongs with the caption, not repeated on every tick. */
+.fin-figs figcaption span {
+  font-weight: 400;
+  color: var(--dim);
+  margin-left: 6px;
+}
+.fin-figs .chart-note { margin-top: 6px; }
+
+/* Identity is never colour alone: the key sits beside the word. */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.chart-key { display: inline-flex; align-items: center; gap: 7px; }
+.chart-key i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+  /* A ring of surface so a mark never sits flush against another fill. */
+  box-shadow: 0 0 0 2px var(--chart-surface);
 }
