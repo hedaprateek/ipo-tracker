@@ -2,14 +2,11 @@
 /**
  * Assemble the static site into dist/.
  *
- * GitHub Pages serves the repository root, which works because it publishes a
- * branch rather than uploading a directory. Cloudflare uploads whatever it is
- * pointed at, so pointing it at the root means uploading node_modules — where
- * wrangler's own workerd binary is 146 MB, six times the 25 MB per-asset limit.
- *
- * The site is four things. Everything else in the repo — the fetch scripts, the
- * local server, lib/ — runs on a machine, not in a browser, and has no business
- * being published.
+ * Not needed by either deployment: GitHub Pages publishes the repository branch,
+ * and Cloudflare uploads the repository root minus what .assetsignore excludes.
+ * This is here for a host that wants a directory handed to it, and as the way to
+ * see what the site actually consists of — four things, about 400 KB. Everything
+ * else in the repo runs on a machine rather than in a browser.
  *
  *   node scripts/build-site.js
  */

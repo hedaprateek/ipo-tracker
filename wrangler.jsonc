@@ -3,14 +3,17 @@
   // IPO Watch through the committed JSON in data/, which a scheduled GitHub
   // Action refreshes; nothing needs to run at the edge.
   //
-  // "directory" is the whole point of this file. Left unset, wrangler uploads
-  // the directory it is pointed at in the dashboard, and pointing that at the
-  // repository root means uploading node_modules — where wrangler's own workerd
-  // binary is 146 MB against a 25 MB per-asset limit. `npm run build` puts the
-  // four things the browser asks for into dist/ and nothing else.
+  // The repository root is the assets directory, and .assetsignore beside this
+  // file says what not to upload — node_modules above all, where wrangler's own
+  // workerd binary is 146 MB against a 25 MB per-asset limit.
+  //
+  // Deploying from the root rather than from a built directory is deliberate:
+  // the site is already static and already committed, so there is nothing to
+  // build, and `wrangler deploy` needs no build step to have run first. A
+  // missing build step is what failed the second deploy.
   "name": "ipo-tracker",
   "compatibility_date": "2026-09-02",
   "assets": {
-    "directory": "./dist"
+    "directory": "."
   }
 }

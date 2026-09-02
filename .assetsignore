@@ -1,0 +1,27 @@
+# What not to upload. Same syntax as .gitignore, read from the root of the
+# assets directory — which is the repository root, so that deploying needs no
+# build step and no dashboard configuration.
+#
+# The site is index.html, styles.css, js/ and data/. Everything below runs on a
+# machine rather than in a browser.
+
+# wrangler's own runtime lives here: workerd is 146 MB against a 25 MB
+# per-asset limit, and uploading it is what failed the first deploy.
+node_modules/
+
+# Server-side: the scheduled fetch, the local dev server, and their shared code.
+lib/
+scripts/
+server.js
+
+# Repository furniture, not site content.
+.git/
+.github/
+.gitignore
+.assetsignore
+package.json
+package-lock.json
+wrangler.jsonc
+README.md
+dist/
+*.log
