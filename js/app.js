@@ -37,6 +37,8 @@ const state = {
   // issue stays open for applications for a fortnight or so afterwards, so
   // hiding everything past its ex-date would hide offers still worth acting on.
   corpWhen: 'all',
+  corpTab: 'offers',
+  corpQuery: '',
   // Everything open, unless the reader narrows to the ones that shut tonight.
   todayWhen: 'open',
 };
@@ -767,11 +769,18 @@ function renderCorp(){
   }).join('') || `<tr><td colspan="6" class="empty">${
     actions.length ? 'No offers in this window.' : emptyText()}</td></tr>`;
 
-  // Dividends and splits are a calendar, not a decision — kept, but folded away.
-  const cal = actions
+  // Dividends, bonuses and splits: dates rather than decisions. They arrive
+  // whether or not anything is done about them, which is why they answer a
+  // different question and sit in their own panel.
+  const q = (state.corpQuery || '').toLowerCase();
+  const upcoming = actions
     .filter((a) => !OFFER_TYPES.includes(a.type))
     .filter((a) => !a.exDate || a.exDate >= today)
     .sort((a, b) => (a.exDate || '9999').localeCompare(b.exDate || '9999'));
+
+  const cal = q
+    ? upcoming.filter((a) => `${a.company || ''} ${a.symbol || ''}`.toLowerCase().includes(q))
+    : upcoming;
 
   // NSE spells a split out in a full sentence; the two face values are the
   // whole of it, and the sentence is too long to sit in a table column.
@@ -780,16 +789,43 @@ function renderCorp(){
       const m = String(a.detail || '').match(/from\s*rs?\.?\s*([\d.]+).*?to\s*rs?e?\.?\s*([\d.]+)/i);
       if (m) return `Face value split · ₹${m[1]} → ₹${m[2]}`;
     }
-    if (a.type === 'bonus' && a.ratioNew) return `Bonus · ${a.ratioNew} free for every ${a.ratioHeld} held`;
+    if (a.type === 'bonus' && a.ratioNew) return `${a.ratioNew} free for every ${a.ratioHeld} held`;
+    if (a.type === 'dividend') return 'Dividend';
     return a.detail || a.label;
   };
 
+  const amount = (a) => (a.type === 'dividend' && a.amount !== null && a.amount !== undefined
+    ? `₹${a.amount} a share` : '—');
+
+  $('#corp-cal-note').textContent = upcoming.length
+    ? `${cal.length === upcoming.length ? upcoming.length : `${cal.length} of ${upcoming.length}`}` +
+      ' upcoming, by ex-date. Holding the share before the ex-date is what makes you eligible.'
+    : 'Nothing dated in the window NSE returned.';
+
   $('#corp-cal-table tbody').innerHTML = cal.map((a) => `
     <tr>
-      <td class="name">${esc(a.company || a.symbol || '—')}</td>
+      <td class="name">${esc(a.company || a.symbol || '—')}${
+        a.symbol ? ` <span class="tag">${esc(a.symbol)}</span>` : ''}</td>
       <td data-label="Action">${esc(shorten(a))}</td>
+      <td data-label="Amount" class="num">${esc(amount(a))}</td>
       <td data-label="Ex-date">${a.exDate ? fmtDate(a.exDate) : '—'}</td>
-    </tr>`).join('') || `<tr><td colspan="3" class="empty">Nothing upcoming.</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="4" class="empty">${
+      q ? 'No company matches that.' : 'Nothing upcoming.'}</td></tr>`;
+}
+
+/** Which of the two corporate panels is showing, and the blurb that fits it. */
+function showCorpPanel(name){
+  state.corpTab = name;
+  $$('#corp-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.corptab === name));
+  $('#corp-panel-offers').hidden = name !== 'offers';
+  $('#corp-panel-calendar').hidden = name !== 'calendar';
+
+  $('#corp-intro').innerHTML = name === 'offers'
+    ? `Offers a shareholder decides about. A rights issue is priced, so it can be set against
+       where the stock actually trades; NSE publishes no price, size or acceptance ratio for a
+       buyback through this feed, so those carry their dates and nothing more.`
+    : `Events that land on a date whether or not you do anything. Nothing here is a decision —
+       the ex-date is simply the cut-off for being on the register when it happens.`;
 }
 
 // ------------------------------------------------------------ stock screen
@@ -2608,6 +2644,18 @@ $('#daybar-stats').addEventListener('click', (e) => {
   save(LS.filters, state.filters);
   renderIpos();
   renderGmp();
+});
+
+$$('#corp-tabs button').forEach((b) => b.addEventListener('click', () => {
+  showCorpPanel(b.dataset.corptab);
+}));
+// The intro text lives with the panel, so the default has to be applied rather
+// than assumed from the markup.
+showCorpPanel(state.corpTab);
+
+$('#corp-cal-search').addEventListener('input', (e) => {
+  state.corpQuery = e.target.value.trim();
+  renderCorp();
 });
 
 $$('#corp-when button').forEach((b) => b.addEventListener('click', () => {

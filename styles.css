@@ -1445,3 +1445,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .screen-table td.num, .screen-table th.num { font-variant-numeric: tabular-nums; }
 .screen-table td.name .fact-note { margin: 2px 0 0; }
 #market-note { margin-top: 14px; }
+
+#corp-tabs { margin: 14px 0 0; }
+#corp-cal-search { min-width: 180px; }
+#corp-panel-calendar .chart-head { align-items: center; }

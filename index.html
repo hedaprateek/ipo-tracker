@@ -247,13 +247,18 @@
   </section>
 
   <section id="tab-corp" hidden>
-    <p class="note" style="margin:14px 0 12px">
-      The other offers a shareholder decides about. A rights issue is priced, so it can be set
-      against where the stock actually trades; NSE publishes no price, size or acceptance ratio
-      for a buyback through this feed, so those carry their dates and nothing more.
-    </p>
+    <!-- Two panels, because they are two different questions. An offer asks
+         whether to act and by when; the calendar only tells you a date is
+         coming. Folding the second under the first, as a collapsed block, buried
+         a hundred-odd dated events behind a summary nobody opens. -->
+    <div class="seg" id="corp-tabs" role="group" aria-label="Which corporate actions">
+      <button data-corptab="offers" class="on">Offers &amp; buybacks</button>
+      <button data-corptab="calendar">Dividends, bonus &amp; splits</button>
+    </div>
 
-    <div class="chart-card">
+    <p class="note" id="corp-intro" style="margin:12px 0"></p>
+
+    <div class="chart-card" id="corp-panel-offers">
       <div class="chart-head">
         <div class="grow">
           <h4>Offers with terms</h4>
@@ -279,17 +284,24 @@
       </div>
     </div>
 
-    <details class="chart-card" id="corp-cal">
-      <summary><b>Dividend, bonus and split calendar</b><span class="chev" aria-hidden="true">›</span></summary>
+    <div class="chart-card" id="corp-panel-calendar" hidden>
+      <div class="chart-head">
+        <div class="grow">
+          <h4>Dividends, bonus issues and splits</h4>
+          <p class="chart-note" id="corp-cal-note"></p>
+        </div>
+        <input type="search" id="corp-cal-search" placeholder="Filter by company…"
+               aria-label="Filter the calendar by company" />
+      </div>
       <div class="tablewrap">
         <table id="corp-cal-table">
           <thead><tr>
-            <th>Company</th><th>Action</th><th>Ex-date</th>
+            <th>Company</th><th>Action</th><th class="num">Amount</th><th>Ex-date</th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
-    </details>
+    </div>
   </section>
 </main>
 
