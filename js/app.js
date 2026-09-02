@@ -1529,12 +1529,18 @@ function renderFacts(host, r){
 
   // Once a category is oversubscribed allotment is a lottery, so the multiple
   // is directly the odds of a single application getting one lot.
-  if (retail){
+  // A retail row can exist with no multiple on it: NSE reports SME bidding as
+  // application counts. `null > 1` is false, which sent that case down the
+  // branch that formats the multiple and threw on it.
+  if (retail && retail.times !== null && retail.times !== undefined){
     add('Retail allotment odds',
       retail.times > 1 ? `about 1 in ${retail.times.toFixed(1)}` : 'likely full allotment',
       retail.times > 1
         ? `retail is ${retail.times.toFixed(2)}× subscribed`
         : `retail is only ${retail.times.toFixed(2)}× subscribed`);
+  } else if (retail && retail.applications){
+    add('Retail applications', retail.applications.toLocaleString('en-IN'),
+      'NSE reports SME bidding as a count of applications, not a multiple');
   }
 
   // The listed price and current price are already the headline stats above,
@@ -2191,9 +2197,38 @@ function openModal(key){
   document.body.appendChild(back);
   document.body.style.overflow = 'hidden';
 
+  // Wired before anything is drawn. Every render below reads live upstream
+  // data, and one bad field used to throw partway through and leave the dialog
+  // with no close handler at all — open, half-empty and impossible to dismiss.
+  // The way out is attached first so it cannot be lost.
+  const close = () => {
+    back.remove();
+    document.body.style.overflow = '';
+    document.removeEventListener('keydown', onKey);
+    if (location.hash.startsWith('#ipo=')) history.replaceState(null, '', '#ipos');
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+
+  back.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-range]');
+    if (chip){
+      setRange(chip.dataset.range);
+      back._drawLine?.();
+      return;
+    }
+    if (e.target === back || e.target.closest('[data-close]')) close();
+  });
+  document.addEventListener('keydown', onKey);
+  $('[data-close]', back).focus();
+
   renderReport($('#modal-report', back), r);
 
-  const cats = (r.categories || []).filter((c) => c.key !== 'nii');
+  // SME issues report application counts and no subscription multiple, so a
+  // category can arrive with times === null. Charting those as a magnitude is
+  // what threw and stranded the dialog.
+  const cats = (r.categories || [])
+    .filter((c) => c.key !== 'nii')
+    .filter((c) => c.times !== null && c.times !== undefined);
   Charts.barChart($('#modal-bars', back), cats.map((c) => ({
     label: c.label,
     value: Number(c.times.toFixed(2)),
@@ -2203,7 +2238,10 @@ function openModal(key){
     labelWidth: 150, ariaLabel: 'Subscription multiple by investor category',
     emptyText: r.status === 'upcoming'
       ? 'Bidding has not opened yet — category figures appear once it does.'
-      : 'NSE has not published category-wise bids for this issue.',
+      : (r.categories || []).length
+        ? 'NSE publishes application counts rather than subscription multiples for SME ' +
+          'issues, so there is no multiple to chart here.'
+        : 'NSE has not published category-wise bids for this issue.',
   });
 
   renderFacts($('#modal-facts', back), r);
@@ -2232,26 +2270,6 @@ function openModal(key){
   back._drawLine = drawLine;
 
   renderModalAllot($('#modal-allot', back), r);
-
-  const close = () => {
-    back.remove();
-    document.body.style.overflow = '';
-    document.removeEventListener('keydown', onKey);
-    if (location.hash.startsWith('#ipo=')) history.replaceState(null, '', '#ipos');
-  };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
-
-  back.addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-range]');
-    if (chip){
-      setRange(chip.dataset.range);
-      drawLine();
-      return;
-    }
-    if (e.target === back || e.target.closest('[data-close]')) close();
-  });
-  document.addEventListener('keydown', onKey);
-  $('[data-close]', back).focus();
 }
 
 const LISTING_ACTION = {
