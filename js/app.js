@@ -2091,11 +2091,14 @@ function modalStats(r){
           : ''}</dd></div>` + subs;
   }
 
-  return band + `
-    <div class="stat"><dt>GMP</dt><dd class="${moveClass(r.gmp ?? 0)}">${
-      r.gmp === null ? '—' : money(r.gmp)}</dd></div>
-    <div class="stat"><dt>Implied gain</dt><dd>${
-      r.gmpPct !== null ? signed(r.gmpPct) : '—'}</dd></div>` + subs;
+  // The premium leads: it is the number a reader opens this view to check, and
+  // the percentage is the half of it that compares across price bands.
+  return `
+    <div class="stat stat-lead"><dt>Implied gain</dt><dd class="${
+      r.gmpPct === null ? '' : moveClass(r.gmpPct)}">${
+      r.gmpPct !== null ? signed(r.gmpPct) : '—'}</dd>
+      <p class="stat-sub">${r.gmp === null ? 'no premium quoted' : `${money(r.gmp)} GMP`}</p></div>
+    ` + band + subs;
 }
 
 function openModal(key){
@@ -2116,9 +2119,21 @@ function openModal(key){
         <button class="icon" data-close aria-label="Close">✕</button>
       </div>
       <div class="modal-body">
-        <div class="stat-row">${modalStats(r)}</div>
+        <div class="stat-row span-2">${modalStats(r)}</div>
 
-        <div id="modal-report"></div>
+        <!-- The premium, and how it got there, lead the view: it is what the
+             reader came to check. Everything below explains or qualifies it. -->
+        <div class="chart-card">
+          <div class="chart-head">
+            <div class="grow">
+              <h4>GMP over time</h4>
+              <p class="chart-note">Recorded by this app on each refresh. Grey market premium is an
+                unofficial indicator, not an exchange price.</p>
+            </div>
+            <div class="range" id="modal-range" role="group" aria-label="Time range"></div>
+          </div>
+          <div id="modal-line"></div>
+        </div>
 
         <div class="chart-card" hidden>
           <h4>Timetable</h4>
@@ -2127,9 +2142,11 @@ function openModal(key){
           <div id="modal-schedule"></div>
         </div>
 
+        <div id="modal-report" class="span-2"></div>
+
         <!-- The fundamentals sit next to the verdict that cites them, ahead of
              the application arithmetic, which is a separate question. -->
-        <div class="chart-card">
+        <div class="chart-card span-2">
           <h4>Key fundamentals in brief</h4>
           <p class="chart-note">The other half of the decision: what the business earns, what it is
             priced at, and how that sits against companies already listed.</p>
@@ -2156,25 +2173,13 @@ function openModal(key){
         </div>
 
         <div class="chart-card">
-          <div class="chart-head">
-            <div class="grow">
-              <h4>GMP over time</h4>
-              <p class="chart-note">Recorded by this app on each refresh. Grey market premium is an
-                unofficial indicator, not an exchange price.</p>
-            </div>
-            <div class="range" id="modal-range" role="group" aria-label="Time range"></div>
-          </div>
-          <div id="modal-line"></div>
-        </div>
-
-        <div class="chart-card">
           <h4>Check allotment</h4>
           <p class="chart-note">Every registrar gates lookup behind a CAPTCHA, so this copies your
             ID and opens the right site — you solve the CAPTCHA and paste.</p>
           <div class="row" id="modal-allot"></div>
         </div>
 
-        <div class="row" style="margin:0">
+        <div class="row span-2" style="margin:0">
           ${r.symbol ? `<a href="https://www.nseindia.com/market-data/issue-information?symbol=${
             encodeURIComponent(r.symbol)}&series=EQ&type=Active" target="_blank" rel="noopener">NSE issue page ↗</a>` : ''}
           <a href="https://www.google.com/search?q=${encodeURIComponent(r.name+' IPO RHP details')}"
