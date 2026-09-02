@@ -34,6 +34,7 @@
   <button data-tab="gmp">GMP<span class="on-wide"> &amp; Trend</span></button>
   <button data-tab="allot"><span class="on-wide">My </span>Applications</button>
   <button data-tab="corp"><span class="on-wide">Corporate </span>Offers</button>
+  <button data-tab="market"><span class="on-wide">Stock </span>Screen</button>
 </nav>
 
 <main>
@@ -217,6 +218,32 @@
         <a href="https://www.nseindia.com/products-services/equity-ipo-bid-details" target="_blank" rel="noopener">Open NSE bid details ↗</a>
       </div>
     </div>
+  </section>
+
+  <section id="tab-market" hidden>
+    <p class="note" style="margin:14px 0 12px">
+      A screen, not a recommendation. It shows which <b id="market-index">index</b> members meet
+      stated criteria today and the figures behind each one. There are no target prices here and no
+      view on when to sell — this app has no basis for either, and a made-up number sitting beside a
+      real one gets read as equally real.
+    </p>
+
+    <div class="chart-card">
+      <div class="chart-head">
+        <div class="grow">
+          <h4>What the screen can and cannot see</h4>
+          <p class="chart-note">NSE refuses scripted access to per-stock quotes and Yahoo's
+            fundamentals endpoints now require a crumb, so price and volume are the only figures
+            reachable across a whole universe for free. Everything below is computed from a year of
+            daily closes: trend, momentum, and where a stock sits in its own range.
+            <b>No P/E, no market cap, no earnings.</b></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="market-groups"></div>
+
+    <p class="disclaimer" id="market-note"></p>
   </section>
 
   <section id="tab-corp" hidden>

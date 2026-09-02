@@ -1,0 +1,55 @@
+name: Run stock screen
+
+# The screen reads a year of daily closes for every index member — fifty
+# requests where the IPO fetch is a handful — and daily closes change once a
+# day. Running it on the IPO schedule would be fifty requests every half hour to
+# learn nothing, so it runs once, after the market has closed and settled.
+on:
+  schedule:
+    # 12:30 UTC = 18:00 IST, comfortably after the 15:30 IST close.
+    - cron: '30 12 * * 1-5'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/market.js'
+      - 'scripts/fetch-market.js'
+      - '.github/workflows/fetch-market.yml'
+
+concurrency:
+  group: fetch-market
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      # Exits non-zero if fewer than 80% of the index priced, which leaves the
+      # previous screen in place rather than publishing a partial one.
+      - name: Screen the index
+        run: node scripts/fetch-market.js nifty50
+
+      - name: Commit if changed
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/market.json
+          if git diff --staged --quiet; then
+            echo "no change"
+          else
+            git commit -m "data: stock screen $(date -u '+%Y-%m-%d %H:%M') UTC"
+            git push
+          fi

@@ -528,7 +528,8 @@ code {
   #scorecard-table,
   .fin-table,
   #corp-table,
-  #corp-cal-table {
+  #corp-cal-table,
+  .screen-table {
     min-width: 0;
     display: block;
   }
@@ -547,20 +548,23 @@ code {
   #scorecard-table thead,
   .fin-table thead,
   #corp-table thead,
-  #corp-cal-table thead { display: none; }
+  #corp-cal-table thead,
+  .screen-table thead { display: none; }
   .compare-table tbody,
   .cat-table tbody,
   #scorecard-table tbody,
   .fin-table tbody,
   #corp-table tbody,
-  #corp-cal-table tbody { display: block; }
+  #corp-cal-table tbody,
+  .screen-table tbody { display: block; }
 
   .compare-table tr,
   .cat-table tr,
   #scorecard-table tr,
   .fin-table tr,
   #corp-table tr,
-  #corp-cal-table tr {
+  #corp-cal-table tr,
+  .screen-table tr {
     display: block;
     padding: 10px 0;
     border-top: 1px solid var(--line-soft);
@@ -580,6 +584,7 @@ code {
   .fin-table td,
   #corp-table td,
   #corp-cal-table td,
+  .screen-table td,
   .compare-table td:not(.name),
   .compare-table td:last-child {
     display: flex;
@@ -597,7 +602,8 @@ code {
   #scorecard-table td.name,
   .fin-table td.name,
   #corp-table td.name,
-  #corp-cal-table td.name {
+  #corp-cal-table td.name,
+  .screen-table td.name {
     display: block;
     text-align: left;
     margin-bottom: 5px;
@@ -608,7 +614,8 @@ code {
   #scorecard-table td::before,
   .fin-table td::before,
   #corp-table td::before,
-  #corp-cal-table td::before {
+  #corp-cal-table td::before,
+  .screen-table td::before {
     content: attr(data-label);
     color: var(--faint);
     font-size: 11px;
@@ -1433,3 +1440,8 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   /* A ring of surface so a mark never sits flush against another fill. */
   box-shadow: 0 0 0 2px var(--chart-surface);
 }
+
+/* ---------------------------------------------------------- stock screen */
+.screen-table td.num, .screen-table th.num { font-variant-numeric: tabular-nums; }
+.screen-table td.name .fact-note { margin: 2px 0 0; }
+#market-note { margin-top: 14px; }

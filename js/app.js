@@ -32,6 +32,7 @@ const state = {
   loaded: false,
   fundamentals: {},
   corporate: {},
+  market: {},
   // Recent by default. The ex-date is the cut-off for *eligibility*; a rights
   // issue stays open for applications for a fortnight or so afterwards, so
   // hiding everything past its ex-date would hide offers still worth acting on.
@@ -277,9 +278,10 @@ async function refresh(){
   const reportJob = json('data/reports.json').catch(() => null);
   const fundJob = json('data/fundamentals.json').catch(() => null);
   const corpJob = json('data/corporate.json').catch(() => null);
+  const marketJob = json('data/market.json').catch(() => null);
 
-  const [ipoRes, gmpRes, repRes, fundRes, corpRes] =
-    await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob, corpJob]);
+  const [ipoRes, gmpRes, repRes, fundRes, corpRes, marketRes] =
+    await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob, corpJob, marketJob]);
 
   if (ipoRes.status === 'fulfilled' && ipoRes.value?.length){
     state.ipos = ipoRes.value;
@@ -305,6 +307,7 @@ async function refresh(){
 
   state.fundamentals = (fundRes.status === 'fulfilled' && fundRes.value) || {};
   state.corporate = (corpRes.status === 'fulfilled' && corpRes.value) || {};
+  state.market = (marketRes.status === 'fulfilled' && marketRes.value) || {};
   state.reports = (repRes.status === 'fulfilled' && repRes.value?.reports) || {};
   const nReports = Object.keys(state.reports).length;
   $('#src-report').textContent = nReports
@@ -787,6 +790,84 @@ function renderCorp(){
       <td data-label="Action">${esc(shorten(a))}</td>
       <td data-label="Ex-date">${a.exDate ? fmtDate(a.exDate) : '—'}</td>
     </tr>`).join('') || `<tr><td colspan="3" class="empty">Nothing upcoming.</td></tr>`;
+}
+
+// ------------------------------------------------------------ stock screen
+
+/**
+ * The listed-market screen.
+ *
+ * Every column is computed from daily closes, and the criteria are printed
+ * above each group rather than left implicit — a screen whose rule is hidden is
+ * indistinguishable from a tip. Nothing here is a target price or an exit, and
+ * the section says so in as many words.
+ */
+function renderMarket(){
+  const host = $('#market-groups');
+  if (!host) return;
+
+  const m = state.market || {};
+  if (!m.rising && !m.falling){
+    host.innerHTML = `<div class="empty">${emptyText(
+      'The screen has not run yet. It updates once a day, after the close.')}</div>`;
+    $('#market-note').textContent = '';
+    return;
+  }
+
+  $('#market-index').textContent = m.index || 'index';
+
+  const pct = (v) => (v === null || v === undefined ? '—' : signed(v));
+  const row = (s) => `
+    <tr>
+      <td class="name">${esc(s.company || s.symbol)}
+        <span class="tag">${esc(s.symbol)}</span>
+        ${s.industry ? `<p class="fact-note">${esc(s.industry)}</p>` : ''}</td>
+      <td data-label="Price" class="num">${money(s.price)}</td>
+      <td data-label="3 months" class="num ${moveClass(s.r3m)}">${pct(s.r3m)}</td>
+      <td data-label="1 month" class="num ${moveClass(s.r1m)}">${pct(s.r1m)}</td>
+      <td data-label="vs 200-day" class="num ${moveClass(s.vsDma200)}">${pct(s.vsDma200)}</td>
+      <td data-label="From 52w high" class="num">${pct(s.fromHigh)}</td>
+      <td data-label="Volume vs avg" class="num">${
+        s.relVolume === null || s.relVolume === undefined ? '—' : s.relVolume.toFixed(2) + '×'}</td>
+    </tr>`;
+
+  const group = (list, label, note) => `
+    <div class="chart-card">
+      <div class="chart-head">
+        <div class="grow">
+          <h4>${esc(label)}</h4>
+          <p class="chart-note">${esc(note)}</p>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table class="screen-table">
+          <thead><tr>
+            <th>Company</th>
+            <th class="num">Price</th>
+            <th class="num">3 months</th>
+            <th class="num">1 month</th>
+            <th class="num">vs 200-day</th>
+            <th class="num">From 52w high</th>
+            <th class="num">Volume vs avg</th>
+          </tr></thead>
+          <tbody>${list.length
+            ? list.map(row).join('')
+            : `<tr><td colspan="7" class="empty">Nothing in the index meets this today.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  host.innerHTML =
+    group(m.rising || [], 'Screening well', m.criteria?.rising || '') +
+    group(m.falling || [], 'Screening poorly', m.criteria?.falling || '');
+
+  const asOf = (m.rising?.[0] || m.falling?.[0])?.asOf;
+  $('#market-note').textContent =
+    `${m.counted} of ${m.of} ${m.index} members priced` +
+    (asOf ? `, closes to ${new Date(asOf).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : '') +
+    '. Momentum describes what a price has already done, not what it will do next. ' +
+    'Index membership is the only quality filter applied — it is a size and liquidity test, ' +
+    'not a judgement about the business. Nothing here is investment advice.';
 }
 
 // ---------------------------------------------------------------- filters
@@ -2461,9 +2542,10 @@ function render(){
   renderIds();
   renderAllot();
   renderCorp();
+  renderMarket();
 }
 
-const TABS = ['today','ipos','gmp','allot','corp'];
+const TABS = ['today','ipos','gmp','allot','corp','market'];
 function showTab(name){
   // IPOs is the landing view: the list is what the app is for, and Today is a
   // question asked of it rather than the default way in.
@@ -2472,7 +2554,7 @@ function showTab(name){
   TABS.forEach((id) => { $('#tab-'+id).hidden = (id !== name); });
   // Today and My Applications answer a fixed question; the filter row would
   // only let you hide the very thing each is for.
-  $('#filter-row').hidden = (name === 'allot' || name === 'today' || name === 'corp');
+  $('#filter-row').hidden = (name === 'allot' || name === 'today' || name === 'corp' || name === 'market');
   // Charts size to their container, so re-draw once the tab is actually visible.
   if (name === 'gmp') renderGmp();
 }
