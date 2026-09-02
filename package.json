@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "fetch": "node scripts/fetch-data.js",
-    "reports": "node scripts/generate-reports.js"
+    "reports": "node scripts/generate-reports.js",
+    "build": "node scripts/build-site.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0"

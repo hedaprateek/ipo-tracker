@@ -1,0 +1,16 @@
+{
+  // Static assets only — there is no Worker script. The page talks to NSE and
+  // IPO Watch through the committed JSON in data/, which a scheduled GitHub
+  // Action refreshes; nothing needs to run at the edge.
+  //
+  // "directory" is the whole point of this file. Left unset, wrangler uploads
+  // the directory it is pointed at in the dashboard, and pointing that at the
+  // repository root means uploading node_modules — where wrangler's own workerd
+  // binary is 146 MB against a 25 MB per-asset limit. `npm run build` puts the
+  // four things the browser asks for into dist/ and nothing else.
+  "name": "ipo-tracker",
+  "compatibility_date": "2026-09-02",
+  "assets": {
+    "directory": "./dist"
+  }
+}
