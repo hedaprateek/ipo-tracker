@@ -871,22 +871,33 @@ function showCorpPanel(name){
  */
 function calendarEvents(){
   const out = [];
-  const push = (date, kind, label, key) => {
-    if (date) out.push({ date, kind, label, key: key || null });
+  // A first word or two, for chips with no room for a company's full legal
+  // name. "Rays of Belief Limited- For Profit Social Enterprise" is not a label.
+  const shorten = (name) => {
+    const words = String(name || '').replace(/\b(limited|ltd)\b\.?/gi, '').trim().split(/[\s,\-–]+/);
+    let take = words.slice(0, words[0] && words[0].length <= 4 ? 2 : 1);
+    // A short first word pulls in the second, which can be a preposition —
+    // "Rays of" reads as an unfinished phrase once a verb follows it.
+    while (take.length > 1 && /^(of|and|the|for|&|de)$/i.test(take[take.length - 1])) take.pop();
+    return take.join(' ') || name || '';
+  };
+  const push = (date, kind, label, short, key) => {
+    if (date) out.push({ date, kind, label, short, key: key || null });
   };
 
   for (const r of allIpos()){
     const tl = state.fundamentals[r.key]?.timeline;
-    push(r.start, 'open', `${r.name} opens`, r.key);
-    push(r.end, 'close', `${r.name} closes`, r.key);
-    push(parseLongDate(tl?.allotment), 'allot', `${r.name} allotment`, r.key);
-    push(r.listingDate || parseLongDate(tl?.listing), 'list', `${r.name} lists`, r.key);
+    const s = shorten(r.name);
+    push(r.start, 'open', `${r.name} opens`, s, r.key);
+    push(r.end, 'close', `${r.name} closes`, s, r.key);
+    push(parseLongDate(tl?.allotment), 'allot', `${r.name} allotment`, s, r.key);
+    push(r.listingDate || parseLongDate(tl?.listing), 'list', `${r.name} lists`, s, r.key);
   }
 
   for (const a of (state.corporate.actions || [])){
     if (a.type === 'dividend' || !a.exDate) continue;
     const who = a.company || a.symbol || '';
-    push(a.exDate, a.type, `${who} · ${a.label.toLowerCase()} ex-date`);
+    push(a.exDate, a.type, `${who} · ${a.label.toLowerCase()} ex-date`, shorten(who));
   }
 
   return out;
@@ -1131,6 +1142,63 @@ function renderDaybar(t){
   cta.dataset.scope = closingToday.length ? 'closing' : 'open';
 }
 
+/**
+ * The seven days ahead, above the list.
+ *
+ * The counts beside it say what state the market is in; this says when the next
+ * thing happens, which is the other half of "should I be paying attention this
+ * week". Deliberately not a month — that is the Calendar tab, and repeating it
+ * here would push the list itself off the fold to say the same thing twice.
+ *
+ * Hidden entirely when the week holds nothing, rather than showing seven empty
+ * boxes to prove it.
+ */
+function renderWeekStrip(){
+  const host = $('#weekstrip');
+  if (!host) return;
+
+  const t = todayISO();
+  const days = [];
+  for (let i = 0; i < 7; i++){
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    days.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+  }
+
+  const byDay = new Map();
+  for (const e of calendarEvents()){
+    if (!days.includes(e.date)) continue;
+    if (!byDay.has(e.date)) byDay.set(e.date, []);
+    byDay.get(e.date).push(e);
+  }
+
+  if (!byDay.size){
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+
+  // The label is the event minus the company, which the chip has no room for:
+  // "closes" and "allotment" are what distinguishes one day from the next.
+  const SHORT = { open: 'opens', close: 'closes', allot: 'allotment', list: 'lists' };
+
+  host.innerHTML = days.map((date) => {
+    const list = byDay.get(date) || [];
+    const shown = list.slice(0, 2);
+    const d = new Date(date + 'T12:00:00');
+    return `<div class="wk-day${date === t ? ' today' : ''}">
+      <div class="wk-date">
+        <b>${d.getDate()}</b>
+        <span>${date === t ? 'today' : d.toLocaleDateString('en-IN', { weekday: 'short' })}</span>
+      </div>
+      ${shown.map((e) => `<span class="wk-ev ${e.kind}" title="${esc(e.label)}">${
+        esc(`${e.short} ${SHORT[e.kind] || 'ex-date'}`.trim())
+      }</span>`).join('')}
+      ${list.length > shown.length ? `<span class="wk-more">+${list.length - shown.length}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
 function renderIpos(){
   const t = todayISO();
   const rows = applyFilters(allIpos());
@@ -1172,6 +1240,7 @@ function renderIpos(){
   $('#result-count').textContent = `${total} IPO${total===1?'':'s'}`;
 
   renderDaybar(t);
+  renderWeekStrip();
 
   // A group with nothing in it is noise unless it is the only one asked for.
   const shown = groups.filter((g) => g.rows.length || groups.length === 1);
@@ -3056,7 +3125,9 @@ function syncFilterUI(){
 
 // ------------------------------------------------------------------- boot
 
-const theme = load(LS.theme, 'dark');
+// Light unless the reader has chosen otherwise. The attribute is set in the
+// markup too, so the first paint is already the right colour.
+const theme = load(LS.theme, 'light');
 document.documentElement.dataset.theme = theme;
 $('#theme').textContent = theme === 'light' ? '☾' : '☀';
 

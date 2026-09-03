@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -101,6 +101,11 @@
       <div class="daybar-stats" id="daybar-stats"></div>
       <a class="daybar-cta" id="daybar-cta" href="#today" hidden></a>
     </div>
+
+    <!-- The week ahead, not the month: a month grid here would repeat the
+         Calendar tab and push the list itself below the fold. -->
+    <a class="weekstrip" id="weekstrip" href="#cal" hidden aria-label="The week ahead — open the calendar"></a>
+
     <div id="ipo-groups"></div>
   </section>
 
