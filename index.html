@@ -35,6 +35,7 @@
   <button data-tab="allot"><span class="on-wide">My </span>Applications</button>
   <button data-tab="corp"><span class="on-wide">Corporate </span>Offers</button>
   <button data-tab="market"><span class="on-wide">Stock </span>Screen</button>
+  <button data-tab="cal">Calendar</button>
 </nav>
 
 <main>
@@ -218,6 +219,22 @@
         <a href="https://www.nseindia.com/products-services/equity-ipo-bid-details" target="_blank" rel="noopener">Open NSE bid details ↗</a>
       </div>
     </div>
+  </section>
+
+  <section id="tab-cal" hidden>
+    <div class="cal-head">
+      <div class="grow">
+        <h2 id="cal-title">Calendar</h2>
+        <p class="chart-note" id="cal-sub"></p>
+      </div>
+      <div class="row" style="margin:0">
+        <button id="cal-prev" aria-label="Previous month">‹</button>
+        <button id="cal-today">This month</button>
+        <button id="cal-next" aria-label="Next month">›</button>
+      </div>
+    </div>
+    <div id="cal-grid"></div>
+    <div id="cal-agenda"></div>
   </section>
 
   <section id="tab-market" hidden>

@@ -33,6 +33,7 @@ const state = {
   fundamentals: {},
   corporate: {},
   market: {},
+  calMonth: null,
   // Recent by default. The ex-date is the cut-off for *eligibility*; a rights
   // issue stays open for applications for a fortnight or so afterwards, so
   // hiding everything past its ex-date would hide offers still worth acting on.
@@ -65,6 +66,22 @@ function nameKey(name){
 
 function todayISO(){
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/**
+ * "September 3, 2026" — the long form the prospectus timetable is printed in —
+ * as a plain calendar date.
+ *
+ * Deliberately not via toISOString: that text parses to local midnight, and UTC
+ * midnight is the previous day everywhere east of Greenwich, which silently
+ * moved every date back one. Local components, the same way todayISO builds the
+ * day these get compared against.
+ */
+function parseLongDate(text){
+  if (!text) return null;
+  const d = new Date(text);
+  if (!Number.isFinite(d.getTime())) return null;
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
@@ -455,8 +472,19 @@ function allIpos(){
     });
   }
 
+  // "Closed" covered two very different situations: allotment still being
+  // decided, and allotment decided and waiting to be looked up. The second is
+  // the one worth acting on, and the prospectus timetable dates it.
+  const t = todayISO();
+  const allotmentOf = (key) => parseLongDate(state.fundamentals[key]?.timeline?.allotment);
+
   return rows.map((r) => ({
     ...r,
+    allotmentDate: allotmentOf(r.key),
+    allotmentOut: (() => {
+      const d = allotmentOf(r.key);
+      return d ? d <= t : null;
+    })(),
     status: (r.start || r.end) ? classify(r) : (r.statusHint || 'upcoming'),
     gmpPct: (r.gmp !== null && r.price) ? (r.gmp / r.price) * 100 : null,
     report: state.reports[r.key]?.report || null,
@@ -828,6 +856,111 @@ function showCorpPanel(name){
        the ex-date is simply the cut-off for being on the register when it happens.`;
 }
 
+// ---------------------------------------------------------------- calendar
+
+/**
+ * Everything dated, in one month.
+ *
+ * The dates were already in the app but scattered across four views — an issue
+ * opening here, its allotment in a modal, an ex-date on another tab. What none
+ * of them answered is the question a calendar answers: what is happening this
+ * week.
+ *
+ * Dividends are counted rather than listed. There are four hundred of them in
+ * the window and they would bury the handful of events that need acting on.
+ */
+function calendarEvents(){
+  const out = [];
+  const push = (date, kind, label, key) => {
+    if (date) out.push({ date, kind, label, key: key || null });
+  };
+
+  for (const r of allIpos()){
+    const tl = state.fundamentals[r.key]?.timeline;
+    push(r.start, 'open', `${r.name} opens`, r.key);
+    push(r.end, 'close', `${r.name} closes`, r.key);
+    push(parseLongDate(tl?.allotment), 'allot', `${r.name} allotment`, r.key);
+    push(r.listingDate || parseLongDate(tl?.listing), 'list', `${r.name} lists`, r.key);
+  }
+
+  for (const a of (state.corporate.actions || [])){
+    if (a.type === 'dividend' || !a.exDate) continue;
+    const who = a.company || a.symbol || '';
+    push(a.exDate, a.type, `${who} · ${a.label.toLowerCase()} ex-date`);
+  }
+
+  return out;
+}
+
+function renderCalendar(){
+  const grid = $('#cal-grid');
+  if (!grid) return;
+
+  const t = todayISO();
+  const base = state.calMonth ? new Date(state.calMonth + '-01T12:00:00') : new Date();
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  $('#cal-title').textContent = base.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+  const events = calendarEvents();
+  const byDay = new Map();
+  for (const e of events){
+    if (!byDay.has(e.date)) byDay.set(e.date, []);
+    byDay.get(e.date).push(e);
+  }
+
+  // Dividends are a count per day, not a list — see above.
+  const divs = new Map();
+  for (const a of (state.corporate.actions || [])){
+    if (a.type !== 'dividend' || !a.exDate) continue;
+    divs.set(a.exDate, (divs.get(a.exDate) || 0) + 1);
+  }
+
+  const first = new Date(year, month, 1);
+  const startPad = (first.getDay() + 6) % 7;          // weeks run Monday-first
+  const days = new Date(year, month + 1, 0).getDate();
+
+  const inMonth = events.filter((e) => e.date.startsWith(`${year}-${String(month+1).padStart(2,'0')}`));
+  $('#cal-sub').textContent = inMonth.length
+    ? `${inMonth.length} dated event${inMonth.length === 1 ? '' : 's'} this month. Dividend ex-dates are counted, not listed — there are too many to read.`
+    : 'Nothing dated in this month.';
+
+  const cells = [];
+  for (let i = 0; i < startPad; i++) cells.push('<div class="cal-cell cal-pad"></div>');
+
+  for (let d = 1; d <= days; d++){
+    const date = iso(new Date(year, month, d));
+    const list = (byDay.get(date) || []).slice(0, 4);
+    const more = (byDay.get(date) || []).length - list.length;
+    const nDiv = divs.get(date) || 0;
+
+    cells.push(`<div class="cal-cell${date === t ? ' today' : ''}">
+      <div class="cal-date">${d}</div>
+      ${list.map((e) => `<span class="cal-ev ${e.kind}"${
+        e.key ? ` data-open="${esc(e.key)}"` : ''} title="${esc(e.label)}">${esc(e.label)}</span>`).join('')}
+      ${more > 0 ? `<span class="cal-more">+${more} more</span>` : ''}
+      ${nDiv ? `<span class="cal-ev dividend">${nDiv} dividend${nDiv === 1 ? '' : 's'}</span>` : ''}
+    </div>`);
+  }
+
+  grid.innerHTML = `<div class="cal-grid">
+    ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => `<div class="cal-dow">${d}</div>`).join('')}
+    ${cells.join('')}
+  </div>`;
+
+  // The grid is unreadable narrow, so a phone gets the same month as a list.
+  const agenda = inMonth.sort((a, b) => a.date.localeCompare(b.date));
+  $('#cal-agenda').innerHTML = agenda.length
+    ? `<div class="cal-list">${agenda.map((e) => `
+        <div class="cal-row${e.date === t ? ' today' : ''}"${e.key ? ` data-open="${esc(e.key)}"` : ''}>
+          <span class="cal-row-date">${fmtDate(e.date)}</span>
+          <span class="cal-ev ${e.kind}">${esc(e.label)}</span>
+        </div>`).join('')}</div>`
+    : '';
+}
+
 // ------------------------------------------------------------ stock screen
 
 /**
@@ -965,15 +1098,20 @@ function renderDaybar(t){
     .filter((r) => r.gmpPct !== null)
     .sort((a, b) => b.gmpPct - a.gmpPct)[0] || null;
 
+  // Allotment being out is the one closed-issue state that asks for something
+  // to be done, so it gets its own count rather than hiding inside "closed".
+  const allotOut = awaiting.filter((r) => r.allotmentOut === true);
+
   const cells = [
     { key: 'open',     n: open.length,      label: 'open now' },
     { key: 'open',     n: closingToday.length, label: 'closing today', urgent: true },
     { key: 'upcoming', n: upcoming.length,  label: 'upcoming' },
-    { key: 'closed',   n: awaiting.length,  label: 'awaiting listing' },
+    { key: 'closed',   n: allotOut.length,  label: 'allotment out', act: true },
+    { key: 'closed',   n: awaiting.length - allotOut.length, label: 'awaiting allotment' },
   ].filter((c) => c.n > 0);
 
   host.innerHTML = cells.map((c) => `
-    <button class="daycell${c.urgent ? ' urgent' : ''}" data-daystatus="${c.key}">
+    <button class="daycell${c.urgent ? ' urgent' : ''}${c.act ? ' act' : ''}" data-daystatus="${c.key}">
       <span class="daycell-n">${c.n}</span>
       <span class="daycell-label">${c.label}</span>
     </button>`).join('') +
@@ -1012,15 +1150,21 @@ function renderIpos(){
       rows: rows.filter((r) => r.status === 'open') },
     { id:'upcoming', label:'Upcoming',
       rows: rows.filter((r) => r.status === 'upcoming') },
-    { id:'pending',  label:'Closed · awaiting listing',
-      note: 'Bidding is over and allotment is being decided. Check your allotment here.',
-      rows: newestFirst(rows.filter((r) => r.status === 'pending' && recent(r)), 'end') },
+    // Allotment decided is a call to action; allotment pending is a wait.
+    { id:'allotted', label:'Closed · allotment out',
+      note: 'Allotment has been decided. Check whether you got any — the Applications tab opens the right registrar.',
+      rows: newestFirst(rows.filter((r) => r.status === 'pending' && recent(r) && r.allotmentOut === true), 'end') },
+    { id:'pending',  label:'Closed · awaiting allotment',
+      note: 'Bidding is over and the basis of allotment is still being decided.',
+      rows: newestFirst(rows.filter((r) => r.status === 'pending' && recent(r) && r.allotmentOut !== true), 'end') },
     { id:'listed',   label:'Recently listed',
       rows: newestFirst(rows.filter((r) => r.status === 'listed' && recent(r)), 'listingDate') },
   ].filter((g) => {
     if (state.filters.status === 'all') return true;
-    // The status filter still offers one "closed" choice, covering both.
-    if (state.filters.status === 'closed') return g.id === 'pending' || g.id === 'listed';
+    // One "closed" choice in the filter row still covers every closed group.
+    if (state.filters.status === 'closed'){
+      return g.id === 'allotted' || g.id === 'pending' || g.id === 'listed';
+    }
     return state.filters.status === g.id;
   });
 
@@ -1057,6 +1201,17 @@ function timingText(r, t){
     const ago = r.end ? daysBetween(r.end, t) : null;
     const closed = ago === null ? 'closed'
       : ago === 0 ? 'closed today' : ago === 1 ? 'closed yesterday' : `closed ${ago} days ago`;
+
+    // Whether allotment is out is the only thing worth knowing between the
+    // close and the listing, so it outranks both of them on the card.
+    if (r.allotmentOut === true){
+      return `${closed} · <span class="allot-out">allotment out</span>`;
+    }
+    if (r.allotmentDate){
+      const d = daysBetween(t, r.allotmentDate);
+      return `${closed} · <span class="await">allotment ${
+        d === 0 ? 'due today' : d === 1 ? 'due tomorrow' : `due in ${d} days`}</span>`;
+    }
     if (r.listingDate){
       const d = daysBetween(t, r.listingDate);
       return `${closed} · <span class="await">lists ${
@@ -1124,11 +1279,34 @@ function bottomLine(r){
   </div>`;
 }
 
+/**
+ * One line on what the company actually does.
+ *
+ * Matters most before bidding opens, where a card otherwise carries a ticker,
+ * two dates and a premium that does not exist yet — nothing that says what is
+ * being bought. Trimmed at a sentence so the grid stays scannable; the full
+ * text is in the detail view.
+ */
+function aboutLine(r){
+  const about = state.fundamentals[r.key]?.about;
+  if (!about) return '';
+
+  // Cut on the first sentence end past a decent length, so the line reads as a
+  // sentence rather than stopping mid-clause.
+  let text = about;
+  if (text.length > 150){
+    const stop = text.indexOf('. ', 80);
+    text = stop > 0 && stop < 190 ? text.slice(0, stop + 1) : text.slice(0, 150).trim() + '…';
+  }
+  return `<p class="card-about">${esc(text)}</p>`;
+}
+
 function card(r, t){
   const L = r.listing;
   return `<article class="card ${r.status}" tabindex="0" data-open="${esc(r.key)}">
     <h3>${esc(r.name)} ${r.board === 'SME' ? '<span class="tag">SME</span>' : ''}</h3>
     <div class="sub">${r.symbol ? esc(r.symbol)+' · ' : ''}${timingText(r, t)}</div>
+    ${aboutLine(r)}
     <dl class="kv">
       <dt>Dates</dt><dd>${fmtDate(r.start)} – ${fmtDate(r.end)}</dd>
       <dt>Price band</dt><dd>${esc(r.priceBand || '—')}</dd>
@@ -1884,22 +2062,11 @@ function renderSchedule(host, r){
   }
   if (card) card.hidden = false;
 
-  // "September 3, 2026" parses to local midnight; reading it back through
-  // toISOString would shift it into the previous day everywhere east of UTC,
-  // so the calendar date is taken from local components — the same way
-  // todayISO builds the day to compare it against.
-  const asISO = (text) => {
-    const d = new Date(text);
-    return Number.isFinite(d.getTime())
-      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      : null;
-  };
-
   const t = todayISO();
   const steps = SCHEDULE_STEPS
     .filter(([k]) => tl[k])
     .map(([k, label]) => {
-      const iso = asISO(tl[k]);
+      const iso = parseLongDate(tl[k]);
       return { key: k, label, when: tl[k], iso, done: iso !== null && iso < t };
     });
 
@@ -2579,9 +2746,10 @@ function render(){
   renderAllot();
   renderCorp();
   renderMarket();
+  renderCalendar();
 }
 
-const TABS = ['today','ipos','gmp','allot','corp','market'];
+const TABS = ['today','ipos','gmp','allot','corp','market','cal'];
 function showTab(name){
   // IPOs is the landing view: the list is what the app is for, and Today is a
   // question asked of it rather than the default way in.
@@ -2590,9 +2758,10 @@ function showTab(name){
   TABS.forEach((id) => { $('#tab-'+id).hidden = (id !== name); });
   // Today and My Applications answer a fixed question; the filter row would
   // only let you hide the very thing each is for.
-  $('#filter-row').hidden = (name === 'allot' || name === 'today' || name === 'corp' || name === 'market');
+  $('#filter-row').hidden = (name === 'allot' || name === 'today' || name === 'corp' || name === 'market' || name === 'cal');
   // Charts size to their container, so re-draw once the tab is actually visible.
   if (name === 'gmp') renderGmp();
+  if (name === 'cal') renderCalendar();
 }
 
 /** `#ipo=<key>` opens that IPO's detail, so a specific issue can be linked. */
@@ -2652,6 +2821,16 @@ $$('#corp-tabs button').forEach((b) => b.addEventListener('click', () => {
 // The intro text lives with the panel, so the default has to be applied rather
 // than assumed from the markup.
 showCorpPanel(state.corpTab);
+
+const shiftMonth = (by) => {
+  const d = state.calMonth ? new Date(state.calMonth + '-01T12:00:00') : new Date();
+  d.setMonth(d.getMonth() + by);
+  state.calMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  renderCalendar();
+};
+$('#cal-prev').addEventListener('click', () => shiftMonth(-1));
+$('#cal-next').addEventListener('click', () => shiftMonth(1));
+$('#cal-today').addEventListener('click', () => { state.calMonth = null; renderCalendar(); });
 
 $('#corp-cal-search').addEventListener('input', (e) => {
   state.corpQuery = e.target.value.trim();

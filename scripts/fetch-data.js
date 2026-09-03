@@ -112,16 +112,29 @@ function writeJson(file, value) {
     const today = new Date().toISOString().slice(0, 10);
     const soon = new Date(Date.now() + 21 * 86400e3).toISOString().slice(0, 10);
 
-    const wanted = iposRes.value
+    const fromNse = iposRes.value
       .filter((r) => r.company && r.start && r.start <= soon && (!r.end || r.end >= today))
       .map((r) => ({
         key: sources.nameKey(r.company),
         company: r.company,
         page: gmpRows.find((g) => g.key === sources.nameKey(r.company))?.page || null,
-      }))
+      }));
+
+    // NSE lists an issue only once it has a date. IPO Watch carries the rest
+    // well before that, and those are precisely the ones a reader knows least
+    // about — so they are the ones the description is worth fetching for. The
+    // GMP row already carries the page URL, so this costs no extra lookup.
+    const fromGmp = gmpRows
+      .filter((g) => g.key && g.page && !/listed/i.test(g.status || ''))
+      .map((g) => ({ key: g.key, company: g.name, page: g.page }));
+
+    const byKey = new Map();
+    for (const it of [...fromNse, ...fromGmp]) if (it.key && !byKey.has(it.key)) byKey.set(it.key, it);
+
+    const wanted = [...byKey.values()]
       // Re-fetch anything captured before the extractor learned its current
       // set of fields, so a new field reaches the issues already on file.
-      .filter((it) => it.key && known[it.key]?.v !== sources.FUNDAMENTALS_VERSION);
+      .filter((it) => known[it.key]?.v !== sources.FUNDAMENTALS_VERSION);
 
     if (wanted.length) {
       try {
