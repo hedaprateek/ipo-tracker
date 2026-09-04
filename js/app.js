@@ -1379,7 +1379,8 @@ function card(r, t){
     <dl class="kv">
       <dt>Dates</dt><dd>${fmtDate(r.start)} – ${fmtDate(r.end)}</dd>
       <dt>Price band</dt><dd>${esc(r.priceBand || '—')}</dd>
-      ${r.subscription != null ? `<dt>Subscribed</dt><dd><b>${r.subscription.toFixed(2)}×</b></dd>` : ''}
+      ${r.status === 'listed' ? '' : `<dt>Subscribed</dt><dd>${
+        r.subscription != null ? `<b>${r.subscription.toFixed(2)}×</b>` : '—'}</dd>`}
       ${r.listingDate ? `<dt>Listing</dt><dd>${fmtDate(r.listingDate)}</dd>` : ''}
       ${L && L.listPrice !== null ? `<dt>Listed at</dt><dd>${money(L.listPrice)}</dd>` : ''}
     </dl>

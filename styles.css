@@ -423,8 +423,15 @@ code {
 }
 .compare-table th:not(:first-child),
 .compare-table td:not(.name) { padding-right: 26px; }
+/* The last column is right-aligned against the card, but not flush against it:
+   with no padding at all the name column claims the slack, squeezes this one
+   below the width of its own value, and the figure is clipped by the wrapper. */
 .compare-table th:last-child,
-.compare-table td:last-child { padding-right: 0; text-align: right; }
+.compare-table td:last-child {
+  padding-right: 2px;
+  text-align: right;
+  white-space: nowrap;
+}
 .compare-table tr.clickable { cursor: pointer; }
 .compare-table tr.clickable:hover td { background: var(--panel-2); }
 .compare-table td.urgent { color: var(--critical); font-weight: 650; }
@@ -656,6 +663,11 @@ code {
   grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
 }
 
+/* The grid stretches every card in a row to the tallest, so without this the
+   contents sit wherever the description above them happens to end — the figures
+   land at a different height in each card and the row reads ragged. A column
+   with the figures anchored to the bottom lines them up across the row, and the
+   slack collects under the description instead. */
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -664,7 +676,10 @@ code {
   padding: 13px 14px;
   cursor: pointer;
   transition: border-color 0.12s, transform 0.12s;
+  display: flex;
+  flex-direction: column;
 }
+.card .kv { margin-top: auto; }
 .card:hover { border-color: var(--faint); transform: translateY(-1px); }
 .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card.open { border-left-color: var(--good); }
@@ -987,6 +1002,9 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* A floor under the width, so the dividers fall at regular intervals instead
+     of wherever each label happens to end. */
+  min-width: 92px;
   padding: 4px 14px 4px 0;
   margin-right: 10px;
   border: 0;
@@ -1030,8 +1048,11 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .backlink:hover { color: var(--accent); }
 
 @media (max-width: 560px) {
-  .daybar { padding: 10px 12px; gap: 10px; }
-  .daycell { padding-right: 10px; margin-right: 6px; }
+  .daybar { padding: 10px 12px; gap: 10px 16px; }
+  /* The strip wraps here, and a divider only knows it is last in the list, not
+     last in its row — so the ones mid-wrap dangle. Spacing separates them
+     instead. */
+  .daycell { padding-right: 0; margin-right: 0; border-right: 0; min-width: 86px; }
   .daycell-n { font-size: 17px; }
   .daybar-cta { width: 100%; text-align: center; }
 }
