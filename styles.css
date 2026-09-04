@@ -454,7 +454,9 @@ code {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 7px 14px;
-    padding: 11px 0;
+    /* Stacked rows sit directly inside .tablewrap, which has a border and no
+       padding of its own — without this the text is flush against it. */
+    padding: 11px 12px;
     border-top: 1px solid var(--line-soft);
   }
   #gmp-table tr:first-child { border-top: 0; }
@@ -494,7 +496,9 @@ code {
   #allot-table tbody { display: block; }
   #allot-table tr {
     display: block;
-    padding: 11px 0;
+    /* Stacked rows sit directly inside .tablewrap, which has a border and no
+       padding of its own — without this the text is flush against it. */
+    padding: 11px 12px;
     border-top: 1px solid var(--line-soft);
   }
   #allot-table tr:first-child { border-top: 0; }
@@ -579,7 +583,9 @@ code {
   .screen-table tr,
   .listed-table tr {
     display: block;
-    padding: 10px 0;
+    /* Stacked rows sit directly inside .tablewrap, which has a border and no
+       padding of its own — without this the text is flush against it. */
+    padding: 10px 12px;
     border-top: 1px solid var(--line-soft);
   }
   .compare-table tr:first-child,
