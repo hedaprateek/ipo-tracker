@@ -536,7 +536,8 @@ code {
   .fin-table,
   #corp-table,
   #corp-cal-table,
-  .screen-table {
+  .screen-table,
+  .listed-table {
     min-width: 0;
     display: block;
   }
@@ -556,14 +557,16 @@ code {
   .fin-table thead,
   #corp-table thead,
   #corp-cal-table thead,
-  .screen-table thead { display: none; }
+  .screen-table thead,
+  .listed-table thead { display: none; }
   .compare-table tbody,
   .cat-table tbody,
   #scorecard-table tbody,
   .fin-table tbody,
   #corp-table tbody,
   #corp-cal-table tbody,
-  .screen-table tbody { display: block; }
+  .screen-table tbody,
+  .listed-table tbody { display: block; }
 
   .compare-table tr,
   .cat-table tr,
@@ -571,7 +574,8 @@ code {
   .fin-table tr,
   #corp-table tr,
   #corp-cal-table tr,
-  .screen-table tr {
+  .screen-table tr,
+  .listed-table tr {
     display: block;
     padding: 10px 0;
     border-top: 1px solid var(--line-soft);
@@ -592,6 +596,7 @@ code {
   #corp-table td,
   #corp-cal-table td,
   .screen-table td,
+  .listed-table td,
   .compare-table td:not(.name),
   .compare-table td:last-child {
     display: flex;
@@ -610,7 +615,8 @@ code {
   .fin-table td.name,
   #corp-table td.name,
   #corp-cal-table td.name,
-  .screen-table td.name {
+  .screen-table td.name,
+  .listed-table td.name {
     display: block;
     text-align: left;
     margin-bottom: 5px;
@@ -622,7 +628,8 @@ code {
   .fin-table td::before,
   #corp-table td::before,
   #corp-cal-table td::before,
-  .screen-table td::before {
+  .screen-table td::before,
+  .listed-table td::before {
     content: attr(data-label);
     color: var(--faint);
     font-size: 11px;
@@ -1629,3 +1636,10 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   }
   .wk-day { flex: 0 0 108px; scroll-snap-align: start; }
 }
+
+/* --------------------------------------------------------- listed table */
+.listed-table { font-size: 12.5px; }
+.listed-table td.num, .listed-table th.num { font-variant-numeric: tabular-nums; }
+.listed-table tr.clickable { cursor: pointer; }
+.listed-table tr.clickable:hover td { background: var(--panel-2); }
+.listed-table .muted { color: var(--faint); }

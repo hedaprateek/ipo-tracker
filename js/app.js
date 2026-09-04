@@ -1075,6 +1075,9 @@ function applyFilters(rows){
     closing:   (a,b) => String(a.end||'9').localeCompare(String(b.end||'9')),
     gmp:       (a,b) => nullsLast(b.gmpPct) - nullsLast(a.gmpPct),
     subscribed:(a,b) => nullsLast(b.subscription) - nullsLast(a.subscription),
+    // Only meaningful once an issue has listed, which is exactly the group the
+    // table below is for: best debut first.
+    listgain:  (a,b) => nullsLast(b.listing?.listGainPct) - nullsLast(a.listing?.listGainPct),
     name:      (a,b) => String(a.name).localeCompare(String(b.name)),
   };
   out.sort(sorters[f.sort] || sorters.closing);
@@ -1199,6 +1202,47 @@ function renderWeekStrip(){
   }).join('');
 }
 
+/**
+ * What recent issues actually did, as a table.
+ *
+ * The question here is not "should I apply" — that is settled — but "how have
+ * these been going", which is a comparison down a column and not something a
+ * grid of cards can answer. Both the issue-to-listing move and what has happened
+ * since are shown, because they are different facts: a fat listing pop that has
+ * since been given back is a different story from one that held.
+ */
+function listedTable(rows){
+  const cell = (v, suffix) => (v === null || v === undefined
+    ? '<span class="muted">—</span>'
+    : `<span class="${moveClass(v)}">${signed(v)}${suffix || ''}</span>`);
+
+  return `<div class="tablewrap">
+    <table class="listed-table">
+      <thead><tr>
+        <th>IPO</th>
+        <th class="num">Issue price</th>
+        <th class="num">Listed at</th>
+        <th class="num">Listing gain</th>
+        <th class="num">Trading now</th>
+        <th class="num">Since listing</th>
+        <th>Listed</th>
+      </tr></thead>
+      <tbody>${rows.map((r) => {
+        const L = r.listing || {};
+        return `<tr class="clickable" data-open="${esc(r.key)}">
+          <td class="name">${esc(r.name)}${r.board === 'SME' ? ' <span class="tag">SME</span>' : ''}</td>
+          <td data-label="Issue price" class="num">${L.issuePrice ? money(L.issuePrice) : '—'}</td>
+          <td data-label="Listed at" class="num">${L.listPrice ? money(L.listPrice) : '—'}</td>
+          <td data-label="Listing gain" class="num">${cell(L.listGainPct)}</td>
+          <td data-label="Trading now" class="num">${L.cmp ? money(L.cmp) : '—'}</td>
+          <td data-label="Since listing" class="num">${cell(L.sinceListingPct)}</td>
+          <td data-label="Listed">${r.listingDate ? fmtDate(r.listingDate) : '—'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
 function renderIpos(){
   const t = todayISO();
   const rows = applyFilters(allIpos());
@@ -1249,7 +1293,11 @@ function renderIpos(){
     <div class="group-title">${g.label} <span class="count">${g.rows.length}</span></div>
     ${g.note && g.rows.length ? `<p class="group-note">${g.note}</p>` : ''}
     ${g.rows.length
-      ? `<div class="cards">${g.rows.map((r) => card(r, t)).join('')}</div>`
+      ? (g.id === 'listed'
+          // Cards are for issues still being decided about. What already listed
+          // is a record to compare down a column, which is a table's job.
+          ? listedTable(g.rows)
+          : `<div class="cards">${g.rows.map((r) => card(r, t)).join('')}</div>`)
       : `<div class="empty">${emptyText()}</div>`}
   `).join('') || `<div class="empty">${emptyText()}</div>`;
 }
