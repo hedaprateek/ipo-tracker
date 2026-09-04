@@ -175,6 +175,8 @@ h1 #today { color: var(--faint); font-weight: 400; }
   .statusbar > summary,
   .statusbar-body { padding-left: 12px; padding-right: 12px; }
   .tabs { padding: 10px 12px 0; gap: 5px; }
+
+
   .tabs button { padding: 6px 10px; font-size: 13px; }
   main { padding: 4px 12px 80px; }
   h1 { font-size: 14px; }
@@ -1643,3 +1645,55 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .listed-table tr.clickable { cursor: pointer; }
 .listed-table tr.clickable:hover td { background: var(--panel-2); }
 .listed-table .muted { color: var(--faint); }
+
+
+/* --------------------------------------------------- phone: single rows */
+/* Declared last on purpose. The base .tabs and .daybar-stats rules set
+   flex-wrap: wrap further down the file than the phone block above, and at
+   equal specificity the later rule wins — overriding them from up there is
+   silently undone. */
+@media (max-width: 560px) {
+  /* Six tabs will not sit on one line at this width, and wrapping them puts a
+     second row of chrome above every screen. One row that scrolls sideways
+     keeps the height of a single row and stays reachable with a thumb. */
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { flex: 0 0 auto; scroll-snap-align: start; }
+
+  /* Same for the counts, which wrapped to three rows — most of a phone screen
+     spent before the list even starts. */
+  .daybar-stats {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .daybar-stats::-webkit-scrollbar { display: none; }
+  .daycell { flex: 0 0 auto; }
+  /* The premium cell names a company, long enough on its own to make the strip
+     scroll for no reason. */
+  /* The filter row wrapped to four: search, two segmented controls, then sort
+     and reset. That is more phone screen than the filters deserve when the
+     list itself is the thing being looked for. One scrollable row, search
+     first because it is the control actually reached for. */
+  .filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 8px;
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .filters > * { flex: 0 0 auto; }
+  #search { min-width: 168px; }
+  .result-count { margin-left: 4px; }
+  .daycell-quiet .daycell-label {
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
