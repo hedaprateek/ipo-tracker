@@ -2529,8 +2529,15 @@ function openModal(key){
       <div class="modal-body">
         <div class="stat-row span-2">${modalStats(r)}</div>
 
-        <!-- The premium, and how it got there, lead the view: it is what the
-             reader came to check. Everything below explains or qualifies it. -->
+        <!-- Demand first. Which category is least crowded is the question this
+             view exists to answer, and it used to be eighth. Beside it, where
+             the premium has been — the two halves of what the market thinks. -->
+        <div class="chart-card">
+          <h4>Subscription by category</h4>
+          <p class="chart-note" id="modal-bars-note"></p>
+          <div id="modal-bars"></div>
+        </div>
+
         <div class="chart-card">
           <div class="chart-head">
             <div class="grow">
@@ -2543,6 +2550,12 @@ function openModal(key){
           <div id="modal-line"></div>
         </div>
 
+        <div class="chart-card">
+          <h4>The numbers that decide it</h4>
+          <p class="chart-note">What one application actually costs, and what it stands to make.</p>
+          <dl class="facts" id="modal-facts"></dl>
+        </div>
+
         <div class="chart-card" hidden>
           <h4>Timetable</h4>
           <p class="chart-note">NSE publishes the bidding window and the listing date. The dates in
@@ -2550,10 +2563,8 @@ function openModal(key){
           <div id="modal-schedule"></div>
         </div>
 
-        <div id="modal-report" class="span-2"></div>
+        <div id="modal-report" class="span-2" hidden></div>
 
-        <!-- The fundamentals sit next to the verdict that cites them, ahead of
-             the application arithmetic, which is a separate question. -->
         <div class="chart-card span-2">
           <h4>Key fundamentals in brief</h4>
           <p class="chart-note">The other half of the decision: what the business earns, what it is
@@ -2568,19 +2579,7 @@ function openModal(key){
           <div id="modal-structure"></div>
         </div>
 
-        <div class="chart-card">
-          <h4>The numbers that decide it</h4>
-          <p class="chart-note">What one application actually costs, and what it stands to make.</p>
-          <dl class="facts" id="modal-facts"></dl>
-        </div>
-
-        <div class="chart-card">
-          <h4>Subscription by category</h4>
-          <p class="chart-note">A category with a lower multiple has better allotment odds.</p>
-          <div id="modal-bars"></div>
-        </div>
-
-        <div class="chart-card">
+        <div class="chart-card" id="modal-allot-card" hidden>
           <h4>Check allotment</h4>
           <p class="chart-note">Every registrar gates lookup behind a CAPTCHA, so this copies your
             ID and opens the right site — you solve the CAPTCHA and paste.</p>
@@ -2625,25 +2624,43 @@ function openModal(key){
 
   renderReport($('#modal-report', back), r);
 
-  // SME issues report application counts and no subscription multiple, so a
-  // category can arrive with times === null. Charting those as a magnitude is
-  // what threw and stranded the dialog.
-  const cats = (r.categories || [])
-    .filter((c) => c.key !== 'nii')
-    .filter((c) => c.times !== null && c.times !== undefined);
-  Charts.barChart($('#modal-bars', back), cats.map((c) => ({
-    label: c.label,
-    value: Number(c.times.toFixed(2)),
-    note: c.offered ? `${c.bid.toLocaleString('en-IN')} bid of ${c.offered.toLocaleString('en-IN')} offered` : '',
-  })), {
-    suffix: '×', reference: 1, referenceLabel: '1× fully subscribed',
-    labelWidth: 150, ariaLabel: 'Subscription multiple by investor category',
+  // NII is the sum of its two halves, which are charted separately.
+  const cats = (r.categories || []).filter((c) => c.key !== 'nii');
+  const withTimes = cats.filter((c) => c.times !== null && c.times !== undefined);
+
+  // SME issues carry no subscription multiple — NSE reports them as a count of
+  // applications instead. That is the same question in a different unit, so it
+  // is charted rather than apologised for; this card sits too near the top to
+  // be blank on half the issues.
+  const asApplications = !withTimes.length && cats.some((c) => c.applications);
+
+  const bars = asApplications
+    ? cats.filter((c) => c.applications).map((c) => ({
+        label: c.label,
+        value: c.applications,
+        note: c.bid ? `${c.bid.toLocaleString('en-IN')} shares bid` : '',
+      }))
+    : withTimes.map((c) => ({
+        label: c.label,
+        value: Number(c.times.toFixed(2)),
+        note: c.offered ? `${c.bid.toLocaleString('en-IN')} bid of ${c.offered.toLocaleString('en-IN')} offered` : '',
+      }));
+
+  $('#modal-bars-note', back).textContent = asApplications
+    ? 'NSE reports SME bidding as a count of applications rather than a multiple. ' +
+      'Fewer applications for a category means less competition for its share of the book.'
+    : 'A category with a lower multiple has better allotment odds.';
+
+  Charts.barChart($('#modal-bars', back), bars, {
+    suffix: asApplications ? '' : '×',
+    ...(asApplications ? {} : { reference: 1, referenceLabel: '1× fully subscribed' }),
+    labelWidth: 150,
+    ariaLabel: asApplications
+      ? 'Applications by investor category'
+      : 'Subscription multiple by investor category',
     emptyText: r.status === 'upcoming'
       ? 'Bidding has not opened yet — category figures appear once it does.'
-      : (r.categories || []).length
-        ? 'NSE publishes application counts rather than subscription multiples for SME ' +
-          'issues, so there is no multiple to chart here.'
-        : 'NSE has not published category-wise bids for this issue.',
+      : 'NSE has not published category-wise bids for this issue.',
   });
 
   renderFacts($('#modal-facts', back), r);
@@ -2716,15 +2733,15 @@ function prospectusBlock(r){
 }
 
 function renderReport(host, r){
+  // Without a model key there is no report, and a card explaining how to
+  // configure one is a note to whoever runs the app, not to whoever reads it.
+  // It was appearing on every issue, above the figures, saying nothing.
   if (!r.report){
-    host.innerHTML = `<div class="report">
-      <div class="report-head"><h4>Apply or avoid</h4></div>
-      <p class="chart-note" style="margin:0">No report for this IPO yet. Reports are generated for
-      open and near-term issues once a model API key is configured — Gemini has a free tier.
-      See the README.</p>
-    </div>`;
+    host.hidden = true;
+    host.innerHTML = '';
     return;
   }
+  host.hidden = false;
 
   const rep = r.report;
   const meta = r.reportMeta;
@@ -2788,6 +2805,14 @@ function renderReport(host, r){
 }
 
 function renderModalAllot(host, r){
+  // There is nothing to look up until bidding has closed, so on an open or
+  // upcoming issue this card was a registrar picker for an allotment that does
+  // not exist yet.
+  const card = host.closest('.chart-card');
+  const closed = r.status === 'pending' || r.status === 'listed';
+  if (card) card.hidden = !closed;
+  if (!closed) return;
+
   const ids = load(LS.ids, []);
   const picked = load(LS.registrars, {});
   if (!ids.length){
