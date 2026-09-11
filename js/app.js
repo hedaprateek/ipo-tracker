@@ -42,6 +42,9 @@ const state = {
   corpQuery: '',
   // Everything open, unless the reader narrows to the ones that shut tonight.
   todayWhen: 'open',
+  // Mainboard and SME are barely the same instrument — different lot sizes,
+  // different reservations, and NSE reports their bidding differently.
+  todayBoard: 'all',
 };
 
 const $ = (s, r) => (r || document).querySelector(s);
@@ -1441,8 +1444,13 @@ function card(r, t){
 
 function renderToday(){
   const t = todayISO();
-  const openAll = allIpos().filter((r) => r.status === 'open');
+  // Board first: the closing-today count has to describe the board being
+  // looked at, or the control promises four issues and the view shows two.
+  const openAll = todayOpenByBoard();
   const closingCount = openAll.filter((r) => r.end === t).length;
+
+  $$('#today-board button').forEach((b) =>
+    b.classList.toggle('on', b.dataset.todayboard === state.todayBoard));
 
   // Offering a scope that would empty the view helps nobody: when nothing
   // closes today the control is not shown, and the scope falls back to open.
@@ -1702,10 +1710,19 @@ function noRecReason(r, opts){
  * do not.
  */
 function todayScope(){
-  const open = allIpos().filter((r) => r.status === 'open');
+  const open = todayOpenByBoard();
   if (state.todayWhen !== 'closing') return open;
   const t = todayISO();
   return open.filter((r) => r.end === t);
+}
+
+/** Open issues on the board being looked at. The board filter comes first, so
+ *  every count, table, card and brief downstream describes the same set. */
+function todayOpenByBoard(){
+  const open = allIpos().filter((r) => r.status === 'open');
+  return state.todayBoard === 'all'
+    ? open
+    : open.filter((r) => r.board === state.todayBoard);
 }
 
 function todayRows(which){
@@ -2378,6 +2395,15 @@ function aiPrompt(rows){
         '',
       ];
 
+  // Read off the set rather than the filter control, so a brief built any other
+  // way still describes itself honestly.
+  const boards = [...new Set(rows.map((r) => r.board))];
+  if (rows.length > 1 && boards.length === 1){
+    lines.splice(lines.length - 1, 0, boards[0] === 'SME'
+      ? 'These are all SME issues — smaller books, larger lots, and NSE reports their bidding as application counts rather than a subscription multiple.'
+      : 'These are all mainboard issues; I am not considering SME today.');
+  }
+
   for (const r of rows){
     lines.push(`## ${r.name}${r.board === 'SME' ? ' (SME)' : ''}`);
     lines.push(`- Closes: ${fmtDate(r.end)}${r.end === t ? ' (today)' : ''}`);
@@ -2401,6 +2427,34 @@ function aiPrompt(rows){
       }
     } else {
       lines.push('- Category-wise subscription: not published yet');
+    }
+
+    // What each category actually costs, and which one these numbers point to.
+    // Without the amounts the model has to re-derive them from lot size and
+    // price band, and it gets them wrong often enough to matter.
+    const opts = categoryOptions(r);
+    if (opts.length){
+      lines.push('- What each category costs at the cap price:');
+      for (const o of opts){
+        lines.push(`    - ${o.label}: ${inr(o.amount)} for ${o.lots} lot${o.lots === 1 ? '' : 's'}` +
+          (o.times !== null ? `, ${o.times.toFixed(2)}x subscribed` : ''));
+      }
+    }
+    const rec = recommendCategory(r);
+    if (rec){
+      lines.push(`- Category these numbers point to: ${rec.pick.label} at ${inr(rec.pick.amount)}` +
+        ` — ${rec.why} (my own arithmetic, not a rule; say so if you disagree)`);
+    } else if (opts.length){
+      // No multiple to compare, which is every SME issue. Application counts
+      // alone will not stand in: fewest applications points at bHNI, but its
+      // reserved pool is smaller in the same proportion, so the comparison is
+      // meaningless without each category's reserved share — which NSE does not
+      // publish here. Better to say so than to hand over a number that reads
+      // like a recommendation to write a ten-lakh cheque.
+      lines.push('- Category these numbers point to: cannot be computed. NSE publishes no ' +
+        'per-category subscription multiple for this issue, and the application counts above ' +
+        'cannot be compared across categories without knowing each one\'s reserved share. ' +
+        'Choose on the amounts and the overall demand, and say the basis is thin.');
     }
     if (r.gmp !== null){
       lines.push(`- Grey market premium: ₹${r.gmp}` +
@@ -2943,6 +2997,11 @@ $('#daybar-cta').addEventListener('click', (e) => {
 
 $$('#today-when button').forEach((b) => b.addEventListener('click', () => {
   state.todayWhen = b.dataset.todaywhen;
+  renderToday();
+}));
+
+$$('#today-board button').forEach((b) => b.addEventListener('click', () => {
+  state.todayBoard = b.dataset.todayboard;
   renderToday();
 }));
 

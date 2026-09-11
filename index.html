@@ -81,9 +81,16 @@
       <div class="grow">
         <h2 id="today-title">Today</h2>
         <p id="today-sub" class="chart-note"></p>
-        <div class="seg" id="today-when" role="group" aria-label="Which issues">
-          <button data-todaywhen="open" class="on">Open now</button>
-          <button data-todaywhen="closing">Closing today</button>
+        <div class="today-filters">
+          <div class="seg" id="today-when" role="group" aria-label="Which issues">
+            <button data-todaywhen="open" class="on">Open now</button>
+            <button data-todaywhen="closing">Closing today</button>
+          </div>
+          <div class="seg" id="today-board" role="group" aria-label="Which board">
+            <button data-todayboard="all" class="on">All</button>
+            <button data-todayboard="Mainboard">Mainboard</button>
+            <button data-todayboard="SME">SME</button>
+          </div>
         </div>
       </div>
       <div class="row" id="today-actions"></div>
