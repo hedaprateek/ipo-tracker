@@ -17,13 +17,14 @@
  *   node scripts/smoke.js
  */
 
-const { execFileSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const PORT = 8799;
+const WAIT_SECONDS = 20;
 
 const TYPES = {
   '.html': 'text/html', '.js': 'text/javascript',
@@ -109,40 +110,50 @@ server.listen(PORT, async () => {
 
   for (const route of SELECTED) {
     const url = `http://localhost:${PORT}${route.path || '/'}${route.hash || ''}`;
-    let dom = '';
+    let dom = "";
     let stderr = '';
 
-    // Chrome's log goes to a file rather than a second pipe. Its helper
-    // processes inherit the parent's handles, so a piped stderr can stay open
-    // after the browser itself has exited and the call then waits for an EOF
-    // that never comes.
+    // Both streams go to files, and nothing is piped.
+    //
+    // Chrome spawns helper processes that inherit whatever handles it was given.
+    // A piped stdout therefore stays open after the browser itself has exited,
+    // and the call waits forever for an EOF that never arrives — which is
+    // exactly what happened here, on Windows and on Linux CI alike, while the
+    // same flags redirected to a file by a shell returned every time.
+    const domFile = path.join(profile, 'dom.html');
     const logFile = path.join(profile, 'chrome.log');
+    const domFd = fs.openSync(domFile, 'w');
     const logFd = fs.openSync(logFile, 'w');
 
+    // Run through the shell's own `timeout`, redirecting to files.
+    //
+    // Chrome writes the DOM and then does not reliably exit — it leaves helper
+    // processes behind and the launcher never returns. Node's own timeout
+    // option does not reap it either. The one form that has always worked is
+    // the shell's timeout with plain file redirection, so that is what runs:
+    // give it a few seconds, take whatever it wrote, kill it. Being killed is
+    // the normal path here, not a failure.
+    fs.closeSync(domFd);
+    fs.closeSync(logFd);
+    const q = (s) => `"${s}"`;
+    const flags = [
+      '--headless', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage',
+      // A fresh profile each time; sharing one deadlocks each launch against
+      // the previous instance's lock.
+      `--user-data-dir=${profile}/${Math.random().toString(36).slice(2)}`,
+      '--virtual-time-budget=6000', '--enable-logging=stderr', '--log-level=0',
+      '--dump-dom',
+    ].join(' ');
+
     try {
-      dom = execFileSync(chrome, [
-        '--headless', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage',
-        // A fresh profile per run. Sharing one makes each launch wait on the
-        // previous instance's lock, and they pile up instead of exiting.
-        `--user-data-dir=${profile}/${Math.random().toString(36).slice(2)}`,
-        '--virtual-time-budget=6000', '--enable-logging=stderr', '--log-level=0',
-        '--dump-dom', url,
-      ], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', logFd],
-        timeout: 90000,
-        // The page's own DOM comes back on stdout and can exceed the 1 MB
-        // default, at which point the call throws and the DOM is lost — which
-        // reads identically to the page never having rendered.
-        maxBuffer: 64 * 1024 * 1024,
-      });
-    } catch (err) {
-      dom = err.stdout || '';
-      stderr = String(err.message || '');
-    } finally {
-      fs.closeSync(logFd);
-      try { stderr += '\n' + fs.readFileSync(logFile, 'utf8'); } catch { /* no log written */ }
+      execSync(`timeout ${WAIT_SECONDS} ${q(chrome)} ${flags} ${q(url)} > ${q(domFile)} 2> ${q(logFile)}`,
+        { stdio: 'ignore', shell: '/bin/sh' });
+    } catch {
+      // timeout returns 124 when it kills Chrome, which is the expected case.
     }
+
+    try { dom = fs.readFileSync(domFile, 'utf8'); } catch { /* nothing written */ }
+    try { stderr = fs.readFileSync(logFile, 'utf8'); } catch { /* no log */ }
 
     const errors = stderr.split('\n')
       .filter((l) => FATAL.test(l) && !IGNORE.test(l))

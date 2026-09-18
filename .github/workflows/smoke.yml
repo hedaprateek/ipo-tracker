@@ -4,24 +4,20 @@ name: Smoke test
 #
 # The bug this is for: opening an SME issue threw partway through building the
 # detail dialog, leaving it open, half-empty and impossible to close. Nothing
-# reported it — it was found by opening every issue by hand. This runs the same
-# sweep on every push, which is where that class of bug should be caught.
+# reported it — it was found by opening every issue by hand. This is meant to
+# catch that class of bug on the commit that introduces it.
+#
+# NOT YET WORKING — manual trigger only, deliberately.
+#
+# Chrome writes the DOM and then does not exit. Every variation tried so far
+# hangs: piped stdio, file redirection, Node's timeout option, and the shell's
+# timeout binary, on Windows and on this runner alike. Until that is solved this
+# must not run on push, because a check that hangs for hours is worse than no
+# check at all. Run it by hand to work on it; the job cap below means a hang
+# costs ten minutes rather than the six-hour default.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'index.html'
-      - 'privacy.html'
-      - 'terms.html'
-      - 'styles.css'
-      - 'js/**'
-      - 'scripts/smoke.js'
-      - '.github/workflows/smoke.yml'
-  pull_request:
   workflow_dispatch:
 
-# A data refresh committing while this runs would queue a second copy for no
-# reason; the newer commit is the one worth testing.
 concurrency:
   group: smoke-${{ github.ref }}
   cancel-in-progress: true
@@ -29,6 +25,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
