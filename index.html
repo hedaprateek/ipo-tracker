@@ -3,8 +3,30 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>IPO Tracker</title>
+
+<title>IPO Tracker — live GMP, subscription and allotment for Indian IPOs</title>
+<meta name="description" content="Open, upcoming and recently listed Indian IPOs — mainboard and SME — with live grey market premium, category-wise subscription odds, allotment dates, and a running record of how often the premium was actually right." />
+<link rel="canonical" href="https://hedaprateek.github.io/ipo-tracker/" />
+
+<!-- Links to this get pasted into WhatsApp and Telegram more than anywhere
+     else, and without these a share renders as a bare URL. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="IPO Tracker" />
+<meta property="og:title" content="IPO Tracker — live GMP, subscription and allotment" />
+<meta property="og:description" content="Indian IPOs with live grey market premium, category-wise allotment odds, and a record of how often the premium was right." />
+<meta property="og:url" content="https://hedaprateek.github.io/ipo-tracker/" />
+<meta property="og:image" content="https://hedaprateek.github.io/ipo-tracker/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="IPO Tracker — live GMP, subscription and allotment" />
+<meta name="twitter:description" content="Indian IPOs with live grey market premium, category-wise allotment odds, and a record of how often the premium was right." />
+<meta name="twitter:image" content="https://hedaprateek.github.io/ipo-tracker/og.png" />
+
 <link rel="stylesheet" href="styles.css" />
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#f4f5f7" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%88%3C/text%3E%3C/svg%3E" />
 
 <!-- ═══ Stunity Tech — studio credit (screen + print) ═══════════════════
      Quiet on screen, set apart from the site's own footer text. In print it
@@ -368,6 +390,27 @@
 </main>
 
 <div class="toast" id="toast"></div>
+
+<!-- The site's own footer. Kept separate from the studio credit below it,
+     which is Stunity Tech's mark and not this site's content. -->
+<footer class="site-footer">
+  <p>
+    <b>Not investment advice.</b> This is an information tool built from public
+    data. Grey market premium is an unofficial, thinly traded and easily
+    manipulated indicator — never a forecast. Figures come from NSE and IPO
+    Watch and can be wrong, stale or missing. Verify anything here against the
+    prospectus and your broker before committing money.
+  </p>
+  <p class="site-footer-privacy">
+    Any PAN or DP ID you add stays in this browser. It is never sent anywhere —
+    there is no account, no server and no tracking.
+  </p>
+  <nav class="site-footer-links" aria-label="Site information">
+    <a href="privacy.html">Privacy</a>
+    <a href="terms.html">Terms &amp; disclaimer</a>
+    <a href="https://github.com/hedaprateek/ipo-tracker" target="_blank" rel="noopener">Source</a>
+  </nav>
+</footer>
 
 <script src="js/charts.js"></script>
 <script src="js/app.js"></script>

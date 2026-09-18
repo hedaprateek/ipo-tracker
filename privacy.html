@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy — IPO Tracker</title>
+<meta name="description" content="What IPO Tracker stores, where it stores it, and what leaves your browser. There is no account, no server and no tracking." />
+<link rel="canonical" href="https://hedaprateek.github.io/ipo-tracker/privacy.html" />
+<link rel="stylesheet" href="styles.css" />
+<meta name="theme-color" content="#f4f5f7" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%88%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+
+<header>
+  <h1>IPO Tracker <span class="dot">·</span> <span style="color:var(--faint);font-weight:400">Privacy</span></h1>
+</header>
+
+<main class="page">
+  <a class="backlink" href="./">‹ Back to the tracker</a>
+
+  <h2>The short version</h2>
+  <p class="lede">
+    There is no account, no server, no database and no analytics. Nothing you type
+    is sent anywhere. Everything the app remembers is stored by your own browser
+    and stays on the device you typed it on.
+  </p>
+
+  <h2>What is stored, and where</h2>
+  <p>
+    The app keeps a few things in your browser's <b>local storage</b>. This is not a
+    cookie and is not transmitted with requests — it is a box on your device that
+    only this site can read.
+  </p>
+  <div class="tablewrap">
+    <table class="page-table">
+      <thead><tr><th>Stored as</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><td class="name"><code>ipotracker.ids</code></td>
+            <td>The PANs or DP/Client IDs you add, with the labels you give them.</td></tr>
+        <tr><td class="name"><code>ipotracker.registrars</code></td>
+            <td>Which registrar you last picked for each issue.</td></tr>
+        <tr><td class="name"><code>ipotracker.history</code>, <code>ipotracker.snapshot</code></td>
+            <td>A local copy of grey market premium readings, so a chart still draws when a source is down.</td></tr>
+        <tr><td class="name"><code>ipotracker.filters</code>, <code>ipotracker.range</code>, <code>ipotracker.theme</code></td>
+            <td>Your filter, time range and light/dark choices.</td></tr>
+        <tr><td class="name"><code>ipotracker.budget</code>, <code>ipotracker.aitarget</code></td>
+            <td>The application budget you typed, and which AI site you last chose.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <b>Your PAN is the sensitive one, so to be explicit about it:</b> it is stored only
+    to save you retyping it, it is copied to your clipboard when you press a check
+    button, and it is never included in anything sent off the device — not in the
+    AI prompt, not anywhere. The allotment check works by opening the registrar's
+    own site and letting you paste; the app cannot look up an allotment for you,
+    because every registrar puts a CAPTCHA in front of it.
+  </p>
+
+  <h2>To erase it</h2>
+  <p>
+    Remove individual IDs with the × beside them on <b>My Applications</b>. To remove
+    everything, clear site data for this domain in your browser settings. Nothing
+    survives that — there is no copy anywhere else.
+  </p>
+
+  <h2>What does leave your browser</h2>
+  <ul class="page-list">
+    <li>
+      <b>Loading the site.</b> It is served by GitHub Pages, and may also be served
+      through Cloudflare. Like any web host, they see the request — your IP address,
+      browser and the file requested — and keep their own logs under their own
+      policies. The app sets nothing and asks for nothing.
+    </li>
+    <li>
+      <b>Market data.</b> The figures are fetched as plain files from this same site.
+      They are refreshed by a scheduled job that runs away from your browser, so
+      normal use makes no request to NSE, IPO Watch or anyone else.
+    </li>
+    <li>
+      <b>The fallback path.</b> If those files cannot be reached, the app can fall back
+      to fetching from the sources through a public relay
+      (<code>allorigins.win</code>, <code>codetabs.com</code> or <code>corsproxy.io</code>).
+      Those relays see that request. It contains no personal data, but you should
+      know it happens.
+    </li>
+    <li>
+      <b>Ask AI.</b> Pressing an “Ask AI” button opens Google, ChatGPT or Claude with a
+      prepared question. That question contains the IPO figures shown on screen and,
+      if you entered one, your application budget. <b>It never contains your PAN.</b>
+      What happens to it after that is governed by whichever service you opened.
+    </li>
+    <li>
+      <b>Outbound links.</b> Registrar sites, NSE, BSE and prospectus documents are other
+      people's websites with their own policies.
+    </li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>This is a tool for adults dealing with their own investments and is not directed at children.</p>
+
+  <h2>Changes and contact</h2>
+  <p>
+    If this ever changes, the change will be visible in
+    <a href="https://github.com/hedaprateek/ipo-tracker" target="_blank" rel="noopener">the source</a>,
+    which is public and carries the full history. Questions or corrections belong in
+    an issue there.
+  </p>
+
+  <p class="page-updated">Last updated 18 September 2026.</p>
+</main>
+
+<footer class="site-footer">
+  <nav class="site-footer-links" aria-label="Site information">
+    <a href="./">Tracker</a>
+    <a href="terms.html">Terms &amp; disclaimer</a>
+    <a href="https://github.com/hedaprateek/ipo-tracker" target="_blank" rel="noopener">Source</a>
+  </nav>
+</footer>
+
+<div class="stunity-credit" id="stunityCredit"><span class="sc-dot"></span><span>Stunity Tech — by <b>Prateek</b></span></div>
+</body>
+</html>

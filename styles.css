@@ -1704,3 +1704,64 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
     text-overflow: ellipsis;
   }
 }
+/* ------------------------------------------------------------ site footer */
+
+/* The site's own footer. The studio credit sits below it and is deliberately
+   not part of it — different owner, different purpose. */
+.site-footer {
+  max-width: 1500px;
+  margin: 28px auto 0;
+  padding: 18px 18px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.site-footer p { margin: 0 0 8px; max-width: 78ch; }
+.site-footer b { color: var(--dim); }
+.site-footer-privacy { color: var(--dim); }
+.site-footer-links { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }
+.site-footer-links a { color: var(--dim); text-decoration: none; }
+.site-footer-links a:hover { color: var(--accent); text-decoration: underline; }
+
+@media (max-width: 560px) {
+  .site-footer { padding-left: 12px; padding-right: 12px; }
+}
+
+/* ------------------------------------------------- standalone text pages */
+
+.page {
+  max-width: 76ch;
+  margin: 0 auto;
+  padding: 8px 18px 40px;
+}
+.page h2 {
+  font-size: 15px;
+  margin: 26px 0 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.page h2:first-of-type { border-top: 0; padding-top: 0; }
+.page p { margin: 0 0 10px; line-height: 1.65; color: var(--dim); }
+.page p b, .page li b { color: var(--ink); }
+.page .lede { font-size: 15px; color: var(--ink-2); }
+.page code {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.page-list { margin: 0 0 10px; padding-left: 18px; color: var(--dim); line-height: 1.65; }
+.page-list li { margin-bottom: 7px; }
+.page-table { font-size: 12.5px; }
+.page-table td { vertical-align: top; }
+.page-table td.name { white-space: normal; }
+.page-updated {
+  margin-top: 26px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  color: var(--faint);
+}

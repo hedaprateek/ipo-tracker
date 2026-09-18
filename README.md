@@ -1,8 +1,13 @@
 # IPO Tracker
 
 Open, upcoming and recently closed IPOs (mainboard + SME), category-wise
-subscription, live GMP with a trend that builds itself, an apply-or-avoid read
-on each live issue, and a place to keep your PANs for allotment checks.
+subscription, live GMP with a trend that builds itself and a record of how often
+that premium was actually right, and a place to keep your PANs for allotment
+checks.
+
+An apply-or-avoid read on each live issue is available too, but only once a model
+API key is configured — see [AI reports](#ai-reports). Without a key the app runs
+fully and that section simply does not appear.
 
 Plain HTML, CSS and JavaScript with no build step and no framework. One small
 Node file serves it locally; a scheduled GitHub Action keeps the published copy
