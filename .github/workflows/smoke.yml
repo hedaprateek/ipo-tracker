@@ -1,0 +1,44 @@
+name: Smoke test
+
+# Loads every view in a real browser and fails on any console error.
+#
+# The bug this is for: opening an SME issue threw partway through building the
+# detail dialog, leaving it open, half-empty and impossible to close. Nothing
+# reported it — it was found by opening every issue by hand. This runs the same
+# sweep on every push, which is where that class of bug should be caught.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'privacy.html'
+      - 'terms.html'
+      - 'styles.css'
+      - 'js/**'
+      - 'scripts/smoke.js'
+      - '.github/workflows/smoke.yml'
+  pull_request:
+  workflow_dispatch:
+
+# A data refresh committing while this runs would queue a second copy for no
+# reason; the newer commit is the one worth testing.
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # GitHub's Ubuntu image ships Chrome; this only pins where it is.
+      - name: Locate Chrome
+        run: echo "CHROME_PATH=$(which google-chrome || which chromium-browser)" >> "$GITHUB_ENV"
+
+      - name: Load every view and fail on console errors
+        run: node scripts/smoke.js
