@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# The data files are the app's own feed rather than pages worth indexing.
+Disallow: /data/
+
+Sitemap: https://hedaprateek.github.io/ipo-tracker/sitemap.xml
