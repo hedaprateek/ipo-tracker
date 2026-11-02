@@ -29,15 +29,15 @@ const HISTORY_FILE = path.join(DATA_DIR, 'gmp-history.json');
 
 // ---------------------------------------------------------------- caching
 
-const cache = new Map();
-
-async function cached(key, ttlMs, producer) {
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < ttlMs) return hit.value;
-  const value = await producer();
-  cache.set(key, { at: Date.now(), value });
-  return value;
-}
+const cached = require('./lib/live-cache').createLiveCache({
+  read(key) { try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, key+'.json'), 'utf8')); } catch { return null; } },
+  write(key, snapshot) {
+    const file = path.join(DATA_DIR, key+'.json');
+    fs.writeFileSync(file+'.tmp', JSON.stringify(snapshot));
+    fs.renameSync(file+'.tmp', file);
+    if (key === 'gmp') writeHistory(sources.recordHistory(readHistory(), snapshot.gmp));
+  },
+});
 
 function readHistory() {
   try {
@@ -97,6 +97,7 @@ function serveStatic(res, urlPath) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  if(process.argv.includes('--static')&&url.pathname.startsWith('/api/'))return sendJson(res,404,{error:'Static preview uses saved datasets'});
 
   try {
     if (url.pathname === '/api/health') {
@@ -104,16 +105,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/ipos') {
-      const ipos = await cached('ipos', 60_000, sources.getIposEnriched);
-      return sendJson(res, 200, { ok: true, fetchedAt: new Date().toISOString(), ipos });
+      const snapshot = await cached('ipos', previous => sources.getIposEnriched(previous?.ipos || []), {force:url.searchParams.has('refresh')});
+      return sendJson(res, 200, {ok:true, ...snapshot});
     }
 
     if (url.pathname === '/api/gmp') {
-      const gmp = await cached('gmp', 5 * 60_000, sources.getGmp);
-      const history = sources.recordHistory(readHistory(), gmp);
-      writeHistory(history);
+      const snapshot = await cached('gmp', sources.getGmp, {force:url.searchParams.has('refresh')});
       return sendJson(res, 200, {
-        ok: true, fetchedAt: new Date().toISOString(), gmp, history,
+        ok: true, ...snapshot, history:readHistory(),
       });
     }
 
@@ -132,8 +131,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`\n  IPO Tracker running at  http://localhost:${PORT}\n`);
+server.on('error',error=>{if(error.code==='EADDRINUSE')server.listen(0,'127.0.0.1');else{console.error(error.message);process.exitCode=1;}});
+server.listen(PORT,'127.0.0.1', () => {
+  const url=`http://localhost:${server.address().port}/`;
+  console.log(`\n  IPO Tracker running at  ${url}\n`);
+  if(process.argv.includes('--open')&&process.platform==='win32')require('child_process').spawn('powershell.exe',['-NoProfile','-Command',"Start-Process '"+url+"'"],{windowsHide:true,stdio:'ignore'});
   console.log('  Data: NSE (issue calendar + subscription), IPO Watch (GMP).');
   console.log(`  GMP history: ${HISTORY_FILE}`);
   console.log('  Ctrl+C to stop.\n');

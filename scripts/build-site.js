@@ -19,7 +19,7 @@ const OUT = path.join(ROOT, 'dist');
 
 // Files the browser actually asks for: index.html references styles.css and
 // js/*, and the page fetches data/*.json when no local server is answering.
-const INCLUDE = ['index.html', 'styles.css', 'js', 'data'];
+const INCLUDE = ['index.html', 'styles.css', 'js', 'data','manifest.webmanifest','og.png','privacy.html','terms.html'];
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });

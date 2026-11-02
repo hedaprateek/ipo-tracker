@@ -24,5 +24,8 @@ package-lock.json
 wrangler.jsonc
 README.md
 dist/
+.cache/
+tests/
+start.cmd
 *.log
 LICENSE

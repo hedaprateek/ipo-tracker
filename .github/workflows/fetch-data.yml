@@ -12,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'lib/**'
+      - 'js/core.js'
       - 'scripts/**'
       - '.github/workflows/fetch-data.yml'
 
@@ -65,3 +66,5 @@ jobs:
           # The schedule can overlap a manual push; rebase rather than fail.
           git pull --rebase --autostash origin main
           git push
+      - name: Check each source after preserving partial updates
+        run: node scripts/check-health.js

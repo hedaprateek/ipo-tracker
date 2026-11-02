@@ -53,6 +53,7 @@ function writeJson(file, value) {
  * for an issue, and a report is still worth writing without it.
  */
 const fundamentals = readJson('fundamentals.json', {});
+const Core=require('../js/core');
 
 // ------------------------------------------------------------------ schema
 
@@ -114,14 +115,14 @@ const REPORT_SCHEMA = {
           type: 'string',
           enum: ['retail', 'shni', 'bhni', 'none'],
           description:
-            "Which application category gives the best odds. 'none' when the verdict is " +
+            "Which application categories are eligible based on the supplied issue terms. 'none' when the verdict is " +
             "avoid, or when there is no basis to prefer one category.",
         },
         reason: {
           type: 'string',
           description:
             'Why that category, in terms of the relative subscription multiples supplied. ' +
-            'A less-subscribed category has better allotment odds.',
+            'A lower subscription multiple is not an exact allotment probability.',
         },
       },
     },
@@ -221,10 +222,8 @@ two is driving your call.
 plainly, set confidence to low, and lean 'neutral' rather than manufacturing a view.
 - Grey market premium is an unofficial, thinly traded, easily manipulated indicator. Treat it as \
 sentiment, never as a forecast, and say so when it is the main thing driving the call.
-- Subscription multiples are the most reliable signal you have. QIB demand is the strongest \
-quality signal; a category with a LOWER multiple has BETTER allotment odds for the applicant.
-- Retail applies up to ₹2L, sHNI ₹2L-₹10L, bHNI above ₹10L. Only recommend sHNI or bHNI when the \
-figures actually justify the larger cheque; retail is the default for most investors.
+- Subscription multiples measure bid demand, not application-level allotment probabilities. Never derive 1 / subscription as an exact chance.
+- Mainboard and SME application rules differ. Use only supplied issue terms and confirm missing eligibility; never apply the retail rules to SME by default.
 - Be direct. If the signals are weak, say avoid and explain why. Do not hedge everything into mush.
 - Keep the two questions apart. forPoints and againstPoints are about whether to APPLY — demand, \
 allotment odds, the premium, the size of the cheque. businessStrengths and businessRisks are about \
@@ -256,6 +255,7 @@ const SUB_EDGES = [0.5, 1, 2, 5, 10, 25, 50, 100];
 function fingerprint(ipo) {
   const gmpPct = ipo.gmp !== null && ipo.price ? (ipo.gmp / ipo.price) * 100 : null;
   return [
+    'rules-v2',
     ipo.status,
     'g' + band(gmpPct, [0.5, 5, 12, 25, 45, 70, 100]),
     's' + band(ipo.subscription, SUB_EDGES),
@@ -271,19 +271,10 @@ function classify(ipo, today) {
 
 /** Join the NSE row to its GMP row the same way the page does. */
 function withGmp(ipos, gmpRows) {
-  const byKey = new Map();
-  for (const g of gmpRows) if (g.key) byKey.set(g.key, g);
 
   return ipos.map((ipo) => {
     const key = nameKey(ipo.company);
-    let g = byKey.get(key) || null;
-    if (!g) {
-      for (const [k, row] of byKey) {
-        if (key && (key.startsWith(k) || k.startsWith(key))) {
-          if (!g || k.length > g.key.length) g = row;
-        }
-      }
-    }
+    let g = gmpRows.find(row=>Core.matchIssue(row,ipos)===ipo) || null;
     return {
       ...ipo,
       key,
@@ -328,21 +319,17 @@ function describe(ipo, history) {
   }
 
   if (lot) {
-    const min = cap ? ` = ${inr(lot * cap)} minimum application` : '';
+    const min = cap ? ` = ${inr(lot * cap)} per trading lot (not necessarily the minimum application)` : '';
     lines.push(`Lot size: ${lot} shares${min}`);
   }
   if (ipo.info?.faceValue) lines.push(`Face value: ₹${ipo.info.faceValue}`);
   if (ipo.info?.issueType) lines.push(`Issue type: ${ipo.info.issueType}`);
+  const entryOptions=Core.categories(ipo);
+  for(const option of entryOptions)lines.push(`Eligible entry amount: ${option.label}, ${option.lots} lot(s), ${inr(option.amount)}. Confirm final issue eligibility.`);
+  if(!entryOptions.length)lines.push('Minimum application terms could not be validated; do not assume a one-lot retail application.');
 
-  // Retail allotment is a lottery once the category is oversubscribed, so the
-  // multiple is directly the odds of getting a single lot.
-  const retail = (ipo.categories || []).find((c) => c.key === 'retail');
-  if (retail && retail.times > 1) {
-    lines.push(
-      `Retail allotment odds: roughly 1 in ${retail.times.toFixed(1)} applications ` +
-      `get a lot, since retail is ${retail.times.toFixed(2)}x subscribed`
-    );
-  }
+  const retail=(ipo.categories||[]).find(c=>c.key==='retail');
+  if(retail?.times!=null)lines.push('Retail subscription: '+retail.times+'x; not an allotment probability');
 
   if (lot && ipo.gmp !== null && ipo.gmp !== undefined) {
     lines.push(`Gain on one lot at the current GMP: ${inr(lot * ipo.gmp)}`);
@@ -356,7 +343,7 @@ function describe(ipo, history) {
     lines.push('Grey market premium: none quoted');
   }
 
-  const points = history[ipo.key]?.points || [];
+  const points = (history[ipo.key]?.points || []).filter(p=>['fetched','backfill'].includes(p.source));
   if (points.length >= 3) {
     const recent = points.slice(-8).map((p) => p.gmp);
     lines.push(
@@ -443,7 +430,8 @@ function describe(ipo, history) {
   const today = now.slice(0, 10);
   const horizon = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
 
-  const merged = withGmp(iposFile.ipos, gmpFile?.gmp || [])
+  const inputHealth={ipos:Core.freshness(iposFile.fetchedAt),gmp:Core.freshness(gmpFile?.fetchedAt)};
+  const merged = withGmp(iposFile.ipos, inputHealth.gmp==='current'?(gmpFile?.gmp || []):[])
     .map((r) => ({ ...r, status: classify(r, today) }))
     .filter((r) => r.status === 'open' || (r.status === 'upcoming' && r.start && r.start <= horizon));
 
@@ -461,7 +449,7 @@ function describe(ipo, history) {
 
   const finish = () =>
     writeJson('reports.json', {
-      ok: true, updatedAt: now, provider: provider || null, model: label, reports,
+      ok: true, updatedAt: now, inputHealth, inputTimes:{ipos:iposFile.fetchedAt,gmp:gmpFile?.fetchedAt||null},provider: provider || null, model: label, reports,
     });
 
   if (!stale.length) {
@@ -504,7 +492,8 @@ function describe(ipo, history) {
         fingerprint: fingerprint(ipo),
         generatedAt: now,
         model: result.model,
-        report: result.data,
+        inputHealth,inputTimes:{ipos:iposFile.fetchedAt,gmp:gmpFile?.fetchedAt||null},
+        report: {...result.data,confidence:inputHealth.ipos==='current'&&inputHealth.gmp==='current'?result.data.confidence:'low'},
       };
 
       spent.input += result.usage.input;

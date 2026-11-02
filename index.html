@@ -66,8 +66,7 @@
   <h1>IPO Tracker <span class="dot">·</span> <span id="today"></span></h1>
   <div class="grow"></div>
   <button id="theme" class="icon" title="Toggle light/dark" aria-label="Toggle theme">☀</button>
-  <button id="auto" title="Refresh automatically every 5 minutes">Auto: off</button>
-  <button id="refresh" class="primary">
+  <button id="refresh" class="primary" title="Refresh now. Data is checked on your first visit each day.">
     <span class="on-wide">Refresh</span><span class="on-narrow" aria-hidden="true">↻</span>
   </button>
 </header>
@@ -84,21 +83,46 @@
 </details>
 
 <nav class="tabs" aria-label="Views">
-  <button data-tab="ipos" class="on">IPOs</button>
-  <button data-tab="gmp">GMP<span class="on-wide"> &amp; Trend</span></button>
+  <button data-tab="home" class="on">Discover</button>
+  <button data-tab="performance">After listing</button>
+  <button data-tab="today">AI tools</button>
   <button data-tab="allot"><span class="on-wide">My </span>Applications</button>
-  <button data-tab="corp"><span class="on-wide">Corporate </span>Offers</button>
-  <button data-tab="market"><span class="on-wide">Stock </span>Screen</button>
-  <button data-tab="cal">Calendar</button>
+  <button data-tab="more">More</button>
 </nav>
 
 <main>
   <div id="offline-banner" class="banner" hidden></div>
+  <div id="data-health" class="data-health" role="status"></div>
+  <section id="tab-home">
+    <div class="home-hero"><span class="eyebrow">Business first. GMP second.</span><h2>Understand the IPO.<br>Then make your call.</h2>
+      <p>Know the company, question the valuation and separate market excitement from reported facts.</p>
+      <label class="sr-only" for="home-search">Find an IPO by company or symbol</label><input id="home-search" type="search" placeholder="Search a company or symbol…" autocomplete="off">
+    </div>
+    <div id="home-stats" class="home-stats"></div>
+    <div class="discovery-toolbar"><div class="seg" id="discovery-board" role="group" aria-label="IPO board"><button data-discovery-board="all" class="on">All boards</button><button data-discovery-board="Mainboard">Mainboard</button><button data-discovery-board="SME">SME</button></div><span class="note">A research guide, not an automatic buy/avoid rating.</span></div>
+    <div id="home-results"></div>
+    <div id="home-comparison"></div>
+    <div id="home-watchlist"></div>
+    <div id="home-next"></div>
+  </section>
+  <section id="tab-performance" hidden>
+    <div class="performance-heading"><span class="eyebrow">Beyond the opening bell</span><h2>Did the listing gain last?</h2><p class="note">Issue price → listing open → latest recorded value. Actual recorded prices, not GMP predictions.</p></div>
+    <div id="performance-summary" class="home-stats"></div>
+    <div class="performance-controls"><input id="performance-search" type="search" placeholder="Search a listed company…" aria-label="Search listed companies"><select id="performance-board" aria-label="Listed IPO board"><option value="all">All boards</option><option>Mainboard</option><option>SME</option></select><select id="performance-sort" aria-label="Sort listed IPOs"><option value="recent">Newest listings</option><option value="return">Highest return since issue</option><option value="weak">Lowest return since issue</option></select></div>
+    <p class="note" id="performance-coverage"></p><div id="performance-list" class="performance-grid"></div>
+  </section>
+  <section id="tab-more" hidden>
+    <h2>Your research toolkit</h2><p class="note">Company research and post-listing results are in the main views. Keep the supporting tools here.</p>
+    <div class="tool-grid"><a href="#gmp"><b>GMP archive</b><span>Historical observations and their source limitations</span></a>
+      <a href="#cal"><b>Calendar</b><span>Issue dates and calendar downloads</span></a>
+      <a href="#home"><b>Compare companies</b><span>Use Compare on up to three Discover cards</span></a>
+      <a href="#more" data-show-guide><b>How to read the signals</b><span>GMP, subscription and financial statements explained</span></a></div>
+    <div class="chart-card research-guide" id="research-guide"><h3>Before you apply</h3><dl><dt>GMP</dt><dd>An unofficial price premium. It can change or disappear; it is not an exchange quote or a promised listing gain.</dd><dt>Subscription</dt><dd>How much bidding demand the issue has attracted. It does not reveal exact allotment odds.</dd><dt>P/E and profits</dt><dd>Check the earnings period, dilution, one-off gains and comparable businesses. A low number alone does not establish value.</dd><dt>After listing</dt><dd>Compare issue price, opening price and the latest dated quote. Corporate actions, liquidity, charges and taxes can change your actual outcome.</dd></dl></div>
+  </section>
 
-  <!-- What can I actually act on today, and under which category. -->
-  <section id="tab-today">
-    <!-- Today has no tab of its own, so it carries its own way back. -->
-    <a class="backlink" href="#ipos">‹ All IPOs</a>
+  <!-- Copy the scoped subscription brief or take it to an external AI. -->
+  <section id="tab-today" hidden>
+    <p class="note">Compare retail and other application categories, copy the figures, or check them with your preferred AI. Figures are dated snapshots; use Refresh for the latest available data.</p>
     <div class="today-head">
       <div class="grow">
         <h2 id="today-title">Today</h2>
@@ -172,6 +196,7 @@
   </section>
 
   <section id="tab-gmp" hidden>
+    <p id="history-provenance" class="note"></p>
     <div class="chart-card">
       <div class="chart-head">
         <div class="grow">
@@ -252,6 +277,9 @@
   </section>
 
   <section id="tab-allot" hidden>
+    <h2>My applications</h2><p class="note">Your own status updates. These are stored on this browser; they are not exchange-confirmed outcomes.</p>
+    <div id="research-notebook"></div>
+    <div id="application-tracker"></div>
     <p class="note" style="margin:14px 0 12px">
       Every registrar puts a CAPTCHA on allotment lookup, so no page can check it for you
       automatically. This keeps your PANs and DP IDs on this device and gives you one click per
@@ -264,6 +292,9 @@
       <button id="pan-add" class="primary">Add</button>
     </div>
     <div id="pan-list" class="row"></div>
+    <div class="privacy-controls"><label><input id="remember-ids" type="checkbox"> Remember IDs on this browser</label>
+      <label><input id="reveal-ids" type="checkbox"> Show full IDs</label><button id="delete-ids" type="button">Delete all IDs</button></div>
+    <p class="note">IDs are masked by default. Browser storage is not encrypted; leave Remember unchecked on shared devices.</p>
 
     <div class="group-title">Check allotment <span class="count" id="allot-count">0</span></div>
     <div class="tablewrap">
@@ -412,6 +443,7 @@
   </nav>
 </footer>
 
+<script src="js/core.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/app.js"></script>
 

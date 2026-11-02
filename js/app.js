@@ -5,10 +5,13 @@
 
 // ------------------------------------------------------------------ state
 
+const Core=IpoCore;
 const LS = {
+  decisions:'ipotracker.decisions', watch:'ipotracker.watch', compare:'ipotracker.compare', applications:'ipotracker.applications', remember:'ipotracker.remember',
   ids: 'ipotracker.ids',
   history: 'ipotracker.history',
   snapshot: 'ipotracker.snapshot',
+  refreshDay: 'ipotracker.refreshDay',
   registrars: 'ipotracker.registrars',
   theme: 'ipotracker.theme',
   filters: 'ipotracker.filters',
@@ -24,7 +27,7 @@ const state = {
   reports: {},
   mode: null,          // 'server' | 'static' | 'proxy'
   fetchedAt: null,
-  autoTimer: null,
+  sourceTimes:{}, sourceErrors:{}, watch:[], compare:[], applications:{},
   compareOff: new Set(),
   gmpSort: { col: 'gmpPct', dir: -1 },
   filters: { q: '', board: 'all', status: 'all', sort: 'closing' },
@@ -61,16 +64,9 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 const MONTHS = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
                  jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' };
 
-function nameKey(name){
-  return String(name || '').toLowerCase().replace(/&amp;/g,'&')
-    .replace(/\b(limited|ltd|private|pvt|india|indian|the|company|co)\b/g,'')
-    .replace(/[^a-z0-9]/g,'');
-}
+function nameKey(name){return Core.nameKey(name);}
 
-function todayISO(){
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
+function todayISO(){return Core.marketDate();}
 
 /**
  * "September 3, 2026" — the long form the prospectus timetable is printed in —
@@ -148,7 +144,7 @@ async function viaProxy(url, asText){
   throw lastErr || new Error('all proxies failed');
 }
 
-const json = (u) => fetch(u, { cache:'no-store' }).then((r) => {
+const json = (u) => fetch(u, { cache:'no-store', signal:AbortSignal.timeout(90000) }).then((r) => {
   if (!r.ok) throw new Error(String(r.status));
   return r.json();
 });
@@ -232,21 +228,8 @@ async function fetchGmpDirect(){
   return out;
 }
 
-function recordLocalHistory(rows){
-  const h = state.history;
-  const stamp = new Date().toISOString();
-  const bucket = stamp.slice(0,13);
-  for (const r of rows){
-    if (!r.key || r.gmp === null) continue;
-    const s = h[r.key] || (h[r.key] = { name:r.name, points:[] });
-    s.name = r.name;
-    const last = s.points[s.points.length-1];
-    if (last && last.t.slice(0,13) === bucket){ last.gmp = r.gmp; continue; }
-    s.points.push({ t: stamp, gmp: r.gmp });
-    if (s.points.length > 400) s.points = s.points.slice(-400);
-  }
-  save(LS.history, h);
-}
+// Static history is authoritative; refreshing an old quote must never create a new observation.
+function recordLocalHistory(){ /* observations are recorded by the fetch pipeline only */ }
 
 /**
  * "Nothing matches these filters" is a lie while the first fetch is still in
@@ -271,7 +254,14 @@ function setRefreshLabel(btn, wide, narrow){
   btn.setAttribute('aria-label', wide);
 }
 
-async function refresh(){
+async function refresh({force=false}={}){
+  if(state.refreshing)return;
+  state.refreshing=true;
+  try { await refreshData(force);if(state.loaded)save(LS.refreshDay,todayISO()); }
+  catch(error){toast('Refresh failed. Keeping the last available data.');console.warn(error);}
+  finally{state.refreshing=false;state.lastChecked=Date.now();$('#refresh').disabled=false;setRefreshLabel($('#refresh'),'Refresh','↻');setBusy(false);}
+}
+async function refreshData(force){
   const btn = $('#refresh');
   btn.disabled = true;
   // Swap only the wide label — overwriting textContent would destroy the
@@ -279,21 +269,22 @@ async function refresh(){
   setRefreshLabel(btn, 'Refreshing…', '⟳');
   setBusy(true);
 
-  const mode = await detectMode();
+  if(force)state.mode=null;
+  const mode = await detectMode();state.fromSaved=false;
   let ipoJob, gmpJob;
 
   if (mode === 'server'){
-    ipoJob = json('api/ipos').then((d) => d.ipos);
-    gmpJob = json('api/gmp');
+    ipoJob = json('api/ipos'+(force?'?refresh=1':''));
+    gmpJob = json('api/gmp'+(force?'?refresh=1':''));
   } else if (mode === 'static'){
-    ipoJob = json('data/ipos.json').then((d) => d.ipos);
+    ipoJob = json('data/ipos.json');
     gmpJob = Promise.all([
       json('data/gmp.json'),
       json('data/gmp-history.json').catch(() => ({})),
     ]).then(([g, history]) => ({ gmp: g.gmp, history, fetchedAt: g.fetchedAt }));
   } else {
-    ipoJob = fetchIposDirect();
-    gmpJob = fetchGmpDirect().then((gmp) => ({ gmp }));
+    ipoJob = fetchIposDirect().then(ipos=>({ipos,fetchedAt:new Date().toISOString()}));
+    gmpJob = fetchGmpDirect().then((gmp) => ({ gmp,fetchedAt:new Date().toISOString() }));
   }
 
   // Reports and fundamentals are optional everywhere — absence is not an error.
@@ -301,29 +292,31 @@ async function refresh(){
   const fundJob = json('data/fundamentals.json').catch(() => null);
   const corpJob = json('data/corporate.json').catch(() => null);
   const marketJob = json('data/market.json').catch(() => null);
+  const healthJob=json('data/source-health.json').catch(()=>null);
 
-  const [ipoRes, gmpRes, repRes, fundRes, corpRes, marketRes] =
-    await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob, corpJob, marketJob]);
+  const [ipoRes, gmpRes, repRes, fundRes, corpRes, marketRes,healthRes] =
+    await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob, corpJob, marketJob,healthJob]);
 
-  if (ipoRes.status === 'fulfilled' && ipoRes.value?.length){
-    state.ipos = ipoRes.value;
+  if (ipoRes.status === 'fulfilled' && ipoRes.value?.ipos?.length){
+    state.ipos = ipoRes.value.ipos;state.sourceTimes.ipos=ipoRes.value.fetchedAt;state.sourceErrors.ipos=ipoRes.value.sourceError||false;
     $('#src-ipo').innerHTML = `IPOs <b>${state.ipos.length}</b> from NSE`;
     $('#src-ipo').classList.remove('err');
   } else {
-    $('#src-ipo').textContent = 'IPOs: fetch failed';
+    state.sourceErrors.ipos=true;$('#src-ipo').textContent = 'IPOs: fetch failed';
     $('#src-ipo').classList.add('err');
   }
 
   if (gmpRes.status === 'fulfilled' && gmpRes.value?.gmp?.length){
-    state.gmp = gmpRes.value.gmp;
-    if (gmpRes.value.history) state.history = { ...state.history, ...gmpRes.value.history };
+    state.gmp = gmpRes.value.gmp.filter(g=>g.key&&nameKey(g.name)!=='company');
+    state.sourceTimes.gmp=gmpRes.value.fetchedAt;state.sourceErrors.gmp=gmpRes.value.sourceError||false;
+    if (gmpRes.value.history) state.history = gmpRes.value.history;
     state.fetchedAt = gmpRes.value.fetchedAt || new Date().toISOString();
     recordLocalHistory(state.gmp);
     histKeyCache.clear();
     $('#src-gmp').innerHTML = `GMP <b>${state.gmp.length}</b> from IPO Watch`;
     $('#src-gmp').classList.remove('err');
   } else {
-    $('#src-gmp').textContent = 'GMP: fetch failed';
+    state.sourceErrors.gmp=true;$('#src-gmp').textContent = 'GMP: fetch failed';
     $('#src-gmp').classList.add('err');
   }
 
@@ -336,64 +329,52 @@ async function refresh(){
     ? `${nReports} AI report${nReports === 1 ? '' : 's'}`
     : 'AI reports: not configured';
 
-  // The collapsed summary carries the one line worth seeing at a glance:
-  // how fresh the data is, or that something failed.
-  const failed = $$('.statusbar .err').length;
-  $('#statusbar').classList.toggle('has-error', failed > 0);
-  $('#mode').textContent = failed
-    ? `${failed} source${failed === 1 ? '' : 's'} failed to load — tap for detail`
-    : {
-        server: 'Live · via local server',
-        static: `Updated ${state.fetchedAt ? relativeTime(state.fetchedAt) : 'recently'}`,
-        proxy:  'No data source — using public proxies',
-      }[mode];
+  state.sourceTimes.market=state.market.fetchedAt;
+  if(mode==='static'&&healthRes.status==='fulfilled')for(const key of ['ipos','gmp']){
+    const health=healthRes.value?.sources?.[key];
+    if(health?.status==='failed'&&Date.parse(health.lastAttempt)>=Date.parse(state.sourceTimes[key]||0))state.sourceErrors[key]=true;
+  }
+  updateFreshness();
 
   if (state.ipos.length || state.gmp.length){
     state.loaded = true;
-    save(LS.snapshot, { ipos: state.ipos, gmp: state.gmp, at: Date.now() });
+    save(LS.snapshot, {version:2, ipos:state.ipos, gmp:state.gmp, history:state.history,
+      fundamentals:state.fundamentals, corporate:state.corporate, market:state.market,
+      reports:state.reports, sourceTimes:state.sourceTimes, sourceErrors:state.sourceErrors, at:Date.now()});
   }
 
   showBanner(mode, ipoRes, gmpRes);
   render();
+  refreshOpenDetail();
 
   btn.disabled = false;
   setRefreshLabel(btn, 'Refresh', '↻');
   setBusy(false);
 }
 
-function showBanner(mode, ipoRes, gmpRes){
-  const failed = ipoRes.status !== 'fulfilled' || gmpRes.status !== 'fulfilled'
-              || !state.ipos.length || !state.gmp.length;
-  const el = $('#offline-banner');
-  if (!failed){ el.hidden = true; return; }
-  el.hidden = false;
-  el.innerHTML = {
-    server: `<b>Some data did not load.</b> The server is running but an upstream
-      (NSE or IPO Watch) did not respond. Showing the last successful fetch —
-      try Refresh again in a minute.`,
-    static: `<b>Published data is incomplete.</b> The scheduled fetch could not reach
-      one of the sources on its last run. It retries every 30 minutes.`,
-    proxy:  `<b>No data source available.</b> NSE and IPO Watch send no CORS headers,
-      so a page opened straight from disk has to route through public proxies that are
-      usually rate-limited or down. Run <code>node server.js</code> in this folder and
-      open <code>http://localhost:8787</code>, or use the published site.`,
-  }[mode];
+function sourceState(key){return state.sourceErrors[key]?'failed':Core.freshness(state.sourceTimes[key],Date.now(),key==='market'?48*3600000:2*3600000);}
+function updateFreshness(){
+  const labels={ipos:'IPO bids',gmp:'GMP',market:'Index screen'};
+  $('#data-health').innerHTML=Object.keys(labels).map(key=>{
+    const status=sourceState(key),stamp=state.sourceTimes[key];
+    return '<span data-source="'+key+'" class="health '+status+'"><b>'+labels[key]+'</b> '+(stamp?esc(relativeTime(stamp)):'not available')+' · '+status+'</span>';
+  }).join('');
+  const problem=['ipos','gmp'].some(key=>sourceState(key)!=='current');
+  $('#statusbar').classList.toggle('has-error',problem);
+  $('#mode').textContent=(state.fromSaved?'Saved on this device':state.mode==='server'?'Live local fetch':'Published snapshot')+' · '+(problem?'Stale / unavailable figures · use Refresh':'view source update times');
+  ['ipos','gmp'].forEach(key=>{$(key==='ipos'?'#src-ipo':'#src-gmp').textContent=(key==='ipos'?'NSE IPOs':'IPO Watch GMP')+' · '+sourceState(key)+' · '+(state.sourceTimes[key]||'unknown timestamp');});
+}
+function showBanner(){
+  const bad=['ipos','gmp'].filter(key=>sourceState(key)!=='current');
+  $('#offline-banner').hidden=!bad.length;
+  $('#offline-banner').textContent=bad.length?bad.map(key=>key==='ipos'?'IPO bids':'GMP').join(' and ')+' data is stale, unavailable or failed to refresh. Old GMP is excluded from current calculations. Verify dates and figures at the source.':'';
 }
 
 // ----------------------------------------------------------------- merging
 
 function gmpFor(name){
-  const key = nameKey(name);
-  if (!key) return null;
-  let best = null;
-  for (const g of state.gmp){
-    if (!g.key) continue;
-    if (g.key === key) return g;
-    if (key.startsWith(g.key) || g.key.startsWith(key)){
-      if (!best || g.key.length > best.key.length) best = g;
-    }
-  }
-  return best;
+  const issue=state.ipos.find(r=>nameKey(r.company)===nameKey(name));
+  return state.gmp.find(g=>Core.matchIssue(g,state.ipos)===issue&&issue)||null;
 }
 
 /**
@@ -438,8 +419,11 @@ function parseGmpDates(s){
 
 /** One unified row per IPO: NSE facts + GMP + any AI report. */
 function allIpos(){
+  const matched=new Map();
+  for(const quote of state.gmp){const issue=Core.matchIssue(quote,state.ipos);if(issue)matched.set(issue,quote);}
+  const joinedQuotes=new Set(matched.values());
   const rows = state.ipos.map((ipo) => {
-    const g = gmpFor(ipo.company);
+    const g = matched.get(ipo)||null;
     const key = nameKey(ipo.company);
     return {
       key,
@@ -464,7 +448,7 @@ function allIpos(){
   const seen = new Set(rows.map((r) => r.key));
   for (const g of state.gmp){
     if (!g.key || seen.has(g.key)) continue;
-    if (rows.some((r) => r.key.startsWith(g.key) || g.key.startsWith(r.key))) continue;
+    if (joinedQuotes.has(g)) continue;
     const { start, end } = parseGmpDates(g.dates);
     rows.push({
       key:g.key, histKey:g.key, name:g.name, symbol:null, board:g.board, start, end,
@@ -483,13 +467,17 @@ function allIpos(){
 
   return rows.map((r) => ({
     ...r,
+    gmp:sourceState('gmp')==='current'?r.gmp:null,
+    trend:sourceState('gmp')==='current'?r.trend:null,
+    estGainPct:sourceState('gmp')==='current'?r.estGainPct:null,
+    gmpSourceState:sourceState('gmp'),
     allotmentDate: allotmentOf(r.key),
     allotmentOut: (() => {
       const d = allotmentOf(r.key);
       return d ? d <= t : null;
     })(),
     status: (r.start || r.end) ? classify(r) : (r.statusHint || 'upcoming'),
-    gmpPct: (r.gmp !== null && r.price) ? (r.gmp / r.price) * 100 : null,
+    gmpPct: (sourceState('gmp')==='current' && r.gmp !== null && (capPrice(r)||r.price)) ? (r.gmp / (capPrice(r)||r.price)) * 100 : null,
     report: state.reports[r.key]?.report || null,
     reportMeta: state.reports[r.key] || null,
   }));
@@ -646,11 +634,11 @@ function gmpScorecard(rows){
 
   for (const r of rows){
     const paid = r.listing?.issuePrice;
-    const actual = r.listing?.listGainPct;
+    const actual = r.listing?.quoteSchema===2?r.listing?.listGainPct:null;
     if (!paid || actual === null || actual === undefined || !r.listingDate) continue;
 
     const pre = (state.history[resolveHistKey(r.histKey)]?.points || [])
-      .filter((p) => p.t.slice(0, 10) < r.listingDate);
+      .filter((p) => ['fetched','backfill'].includes(p.source) && p.t.slice(0, 10) < r.listingDate);
     if (!pre.length) continue;
 
     const predicted = (pre[pre.length - 1].gmp / paid) * 100;
@@ -1123,7 +1111,7 @@ function renderDaybar(t){
     { key: 'open',     n: open.length,      label: 'open now' },
     { key: 'open',     n: closingToday.length, label: 'closing today', urgent: true },
     { key: 'upcoming', n: upcoming.length,  label: 'upcoming' },
-    { key: 'closed',   n: allotOut.length,  label: 'allotment out', act: true },
+    { key: 'closed',   n: allotOut.length,  label: 'allotment expected', act: true },
     { key: 'closed',   n: awaiting.length - allotOut.length, label: 'awaiting allotment' },
   ].filter((c) => c.n > 0);
 
@@ -1266,8 +1254,8 @@ function renderIpos(){
     { id:'upcoming', label:'Upcoming',
       rows: rows.filter((r) => r.status === 'upcoming') },
     // Allotment decided is a call to action; allotment pending is a wait.
-    { id:'allotted', label:'Closed · allotment out',
-      note: 'Allotment has been decided. Check whether you got any — the Applications tab opens the right registrar.',
+    { id:'allotted', label:'Closed · allotment expected',
+      note: 'The scheduled allotment date has passed; results must be checked with the registrar. Check whether you got any — the Applications tab opens the right registrar.',
       rows: newestFirst(rows.filter((r) => r.status === 'pending' && recent(r) && r.allotmentOut === true), 'end') },
     { id:'pending',  label:'Closed · awaiting allotment',
       note: 'Bidding is over and the basis of allotment is still being decided.',
@@ -1325,7 +1313,7 @@ function timingText(r, t){
     // Whether allotment is out is the only thing worth knowing between the
     // close and the listing, so it outranks both of them on the card.
     if (r.allotmentOut === true){
-      return `${closed} · <span class="allot-out">allotment out</span>`;
+      return `${closed} · <span class="allot-out">allotment expected</span>`;
     }
     if (r.allotmentDate){
       const d = daysBetween(t, r.allotmentDate);
@@ -1353,6 +1341,8 @@ function verdictChip(report){
   const label = v === 'apply' ? 'Apply' : v === 'avoid' ? 'Avoid' : 'Neutral';
   return `<span class="verdict-chip verdict-${esc(v)}">${label}</span>`;
 }
+function reportIsCurrent(r){return r.reportMeta?.inputHealth?.ipos==='current'&&r.reportMeta?.inputHealth?.gmp==='current'&&
+  sourceState('ipos')==='current'&&sourceState('gmp')==='current'&&Core.freshness(r.reportMeta.generatedAt)==='current';}
 
 const signed = (n, digits = 1) =>
   `${n > 0 ? '+' : ''}${n.toFixed(digits)}%`;
@@ -1421,7 +1411,94 @@ function aboutLine(r){
   return `<p class="card-about">${esc(text)}</p>`;
 }
 
-function card(r, t){
+let fundCacheSource=null,fundCache=new Map();
+function fundFor(r){
+  if(fundCacheSource!==state.fundamentals){fundCacheSource=state.fundamentals;fundCache.clear();}
+  if(fundCache.has(r.key))return fundCache.get(r.key);
+  const direct=state.fundamentals[r.key];
+  const names=Object.entries(state.fundamentals).map(([key,value])=>({company:key,value}));
+  const value=direct||Core.matchIssue({name:r.name},names)?.value||{};fundCache.set(r.key,value);return value;
+}
+function percentText(value){return value==null?'Not available':signed(value);}
+function quoteTime(stamp){if(!stamp)return 'timestamp unavailable';const date=new Date(stamp);return Number.isFinite(date.getTime())?date.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+' IST':'timestamp unavailable';}
+function safeSource(url,label){return /^https:\/\//i.test(url||'')?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label)+' ↗</a>':'';}
+function card(r,t){
+  if(r.status==='listed')return performanceCard(r);
+  const f=fundFor(r),brief=Core.research(r,f),entry=categoryOptions(r)[0],decision=state.decisions?.[r.key];
+  const facts=brief.facts.slice(0,2);
+  return `<article class="card research-card ${r.status}" data-open="${esc(r.key)}" tabindex="0">
+    <div class="research-card-top"><span class="tag">${esc(r.board)}</span><span class="sub">${timingText(r,t)}</span></div>
+    <h3>${esc(r.name)}</h3><p class="business-intro">${esc(brief.about?brief.about.slice(0,205)+(brief.about.length>205?'…':''):'Company profile is not available yet. Read the offer document before forming a view.')}</p>
+    <div class="research-metrics"><div><span>GMP · unofficial</span><b class="${r.gmp==null?'':moveClass(r.gmp)}">${money(r.gmp)}</b><small>${r.gmpPct==null?esc(r.gmpSourceState==='current'?'No quote available':'Stale / unavailable'):percentText(r.gmpPct)+' of issue price'}</small></div>
+      <div><span>Minimum entry</span><b>${entry?inr(entry.amount):'Not available'}</b><small>${entry?entry.lots+' lot(s) · verify eligibility':'Issue terms missing'}</small></div></div>
+    <div class="evidence-pills">${facts.map(fact=>`<span class="${fact.kind}">${esc(fact.title)}</span>`).join('')||'<span>Financial data incomplete</span>'}</div>
+    <div class="research-card-foot"><span>${brief.coverage}/4 research data groups</span>${decision?'<span class="your-view">Your view: '+esc(decision.status)+'</span>':''}</div>
+    <button class="primary research-open" data-research="${esc(r.key)}">Understand this IPO →</button>${issueActions(r)}</article>`;
+}
+function performanceCard(r){
+  const p=Core.performance(r),label=p.open?'Listing open':p.close?'Listing-day close':'Listing price';
+  const first=p.open||p.close,listingGain=p.open?p.openingGain:p.closingGain;
+  const path=p.open&&p.latest?(p.latest>=p.open?'Held above its opening price':'Below its opening price'):'Opening price unavailable';
+  return `<article class="card performance-card" data-open="${esc(r.key)}" tabindex="0"><div class="research-card-top"><span class="tag">${esc(r.board)}</span><span class="sub">Listed ${fmtDate(r.listingDate)}</span></div><h3>${esc(r.name)}</h3>
+    <div class="price-journey"><div><span>Issue</span><b>${money(p.issue)}</b></div><i aria-hidden="true">→</i><div><span>${label}</span><b>${money(first)}</b><small>${percentText(listingGain)}</small></div><i aria-hidden="true">→</i><div><span>Latest recorded</span><b>${money(p.latest)}</b><small>${percentText(p.totalReturn)}</small></div></div>
+    <p class="price-timestamp">${p.latest?'Quote '+quoteTime(p.asOf)+' · '+p.quoteStatus:'Market quote unavailable from the current source'}</p>
+    <div class="lot-outcome"><span>${p.shares?'One original application · '+p.shares+' shares':'Original application lot unavailable'}</span><b>${p.value==null?'Value not available':money(p.value)}</b>${p.profit==null?'':`<small class="${moveClass(p.profit)}">${money(p.profit)} before charges / taxes · cost ${money(p.cost)}</small>`}</div>
+    <p class="price-path">${p.blocked?'Corporate action detected. Unadjusted returns are withheld.':path}</p>
+    <button class="research-open" data-research="${esc(r.key)}">Company &amp; performance →</button></article>`;
+}
+function renderPerformance(){
+  const all=allIpos().filter(r=>r.status==='listed').sort((a,b)=>String(b.listingDate||'').localeCompare(a.listingDate||''));
+  const query=($('#performance-search').value||'').trim().toLowerCase(),board=$('#performance-board').value;
+  const visible=all.filter(r=>(board==='all'||r.board===board)&&(!query||(r.name+' '+(r.symbol||'')).toLowerCase().includes(query)));
+  const sort=$('#performance-sort').value;
+  if(sort!=='recent')visible.sort((a,b)=>{const x=Core.performance(a).totalReturn,y=Core.performance(b).totalReturn;
+    return x==null?1:y==null?-1:sort==='weak'?x-y:y-x;});
+  const quoted=all.map(Core.performance).filter(p=>p.latest),returns=quoted.map(p=>p.totalReturn).filter(v=>v!=null).sort((a,b)=>a-b);
+  const middle=returns.length?returns.length%2?returns[Math.floor(returns.length/2)]:(returns[returns.length/2-1]+returns[returns.length/2])/2:null;
+  $('#performance-summary').innerHTML=[['Listed issues',String(all.length)],['With a market quote',String(quoted.length)],['Above issue price',String(returns.filter(v=>v>0).length)+' / '+returns.length],['Median since issue',middle==null?'—':signed(middle)]]
+    .map(([label,value])=>'<div class="outcome-stat"><b>'+value+'</b><span>'+label+'</span></div>').join('');
+  $('#performance-coverage').textContent=visible.length+' matches · '+quoted.length+'/'+all.length+' have recorded quotes. Opening prices are shown only when the listing-day open is available. Summaries describe the quoted sample, not every IPO; timestamps differ.';
+  $('#performance-list').innerHTML=visible.slice(0,state.performanceLimit||18).map(performanceCard).join('')||'<p class="empty">No matching listed IPOs.</p>';
+  if(visible.length>(state.performanceLimit||18))$('#performance-list').insertAdjacentHTML('beforeend','<button class="load-more" data-load-performance>Show more listings</button>');
+}
+function renderResearch(back,r){
+  const f=fundFor(r),brief=Core.research(r,f),p=Core.performance(r),entry=categoryOptions(r)[0],saved=state.decisions?.[r.key]||{};
+  const source=safeSource(f.source,'Company profile & financial source'),rhp=safeSource(r.info?.rhpUrl,'Offer document');
+  const facts=brief.facts.map(fact=>'<div class="evidence-row '+fact.kind+'"><b>'+esc(fact.title)+'</b><span>'+esc(fact.detail)+'</span></div>').join('');
+  const header=`<div class="research-lead"><span class="eyebrow">Your research brief</span><h3>What does the company do?</h3><p>${esc(brief.about||'A sourced company profile is not available. Open the offer document; no business description has been invented.')}</p><div class="source-links">${source} ${rhp}</div><small class="note">Profile/financials checked ${f.fetchedAt?quoteTime(f.fetchedAt):'date unavailable'} · ${brief.coverage}/4 data groups available. Coverage is not an investment rating.</small></div>`;
+  const listing=r.status==='listed'?`<section class="research-block"><h3>After the listing</h3><div class="research-metrics"><div><span>Opening gain</span><b>${percentText(p.openingGain)}</b></div><div><span>Listing close gain</span><b>${percentText(p.closingGain)}</b></div><div><span>Latest vs issue</span><b>${percentText(p.totalReturn)}</b></div><div><span>Since opening</span><b>${percentText(p.retained)}</b></div></div><p class="note">Latest quote ${money(p.latest)} · ${quoteTime(p.asOf)}. ${p.blocked?'Corporate-action adjustments are unresolved; returns withheld.':'Returns are before charges and taxes.'}</p><div id="modal-price-history"></div>${safeSource(r.listing?.source,'Market price source')}</section>`:
+    `<section class="research-block sentiment-block"><h3>What is the market signalling?</h3><div class="research-metrics"><div><span>GMP · unofficial</span><b>${money(r.gmp)}</b><small>${r.gmpPct==null?'No current GMP for this issue':percentText(r.gmpPct)+' versus issue price'}</small></div><div><span>Subscription snapshot</span><b>${r.subscription==null?'Not available':r.subscription.toFixed(2)+'×'}</b><small>Bid demand, not allotment odds</small></div></div><p class="note">GMP source: ${sourceState('gmp')} · ${quoteTime(state.sourceTimes.gmp)}. A premium can disappear and is not evidence of business quality.</p></section>`;
+  $('#modal-research',back).innerHTML=header+listing+`<section class="research-block"><h3>What stands out in the reported figures?</h3>${facts||'<p class="note">Financial evidence is missing; review the offer document.</p>'}<p class="note">Only consecutive full-year figures are compared. Interim periods are not annualised. Reported EPS and peer multiples may use different periods or dilution assumptions.</p></section>
+    <section class="research-block questions-block"><h3>Questions before you apply</h3><ul>${brief.questions.map(q=>'<li>'+esc(q)+'</li>').join('')}</ul>${brief.uses.length?'<h4>Disclosed use of proceeds</h4><ul>'+brief.uses.slice(0,3).map(o=>'<li>'+esc(o.purpose)+'</li>').join(''):'<p class="note">Use-of-proceeds details are missing from this snapshot.</p>'}</section>
+    ${r.status!=='listed'&&entry?`<section class="research-block"><h3>Try a listing-day scenario</h3><p class="note">Illustration only, not a price forecast. Original minimum application: ${money(entry.amount)} (${entry.lots} lot(s)). Allotment is not assumed.</p><label for="scenario-return">Illustrative move from issue price <output id="scenario-percent">0%</output></label><input id="scenario-return" type="range" min="-40" max="80" step="1" value="0"><div id="scenario-result" class="scenario-result"></div></section>`:''}
+    <section class="research-block decision-block"><h3>Your call, your reasoning</h3><p class="note">A private research note, not an automated recommendation.</p><div class="decision-options">${['Shortlist','Research more','Pass'].map(status=>'<button data-decision="'+esc(status)+'" data-decision-key="'+esc(r.key)+'" aria-pressed="'+(saved.status===status)+'">'+status+'</button>').join('')}</div><label for="research-note">What matters to you?</label><textarea id="research-note" data-note-key="${esc(r.key)}" placeholder="For example: check customer concentration and cash flow before deciding." maxlength="1200">${esc(saved.note||'')}</textarea><p class="note" id="note-saved" role="status">Notes stay in this browser.</p></section>`;
+  if(r.status==='listed'&&r.listing?.history?.length){
+    const points=r.listing.history.map(v=>({t:Date.parse(v.date),v:v.close}));
+    Charts.lineChart($('#modal-price-history',back),[{name:r.name,color:'var(--series-1)',points}],{height:180,prefix:'₹',ariaLabel:'Recorded closing price history'});
+  }
+  const slider=$('#scenario-return',back);
+  if(slider){const draw=()=>{const change=Number(slider.value),profit=entry.amount*change/100;$('#scenario-percent',back).textContent=signed(change);
+    $('#scenario-result',back).innerHTML='<span>Illustrative application value</span><b>'+money(entry.amount+profit)+'</b><small class="'+moveClass(profit)+'">'+money(profit)+' before charges and taxes</small>';};slider.addEventListener('input',draw);draw();}
+}
+function renderNotebook(){
+  const entries=Object.entries(state.decisions||{});$('#research-notebook').hidden=!entries.length;
+  $('#research-notebook').innerHTML='<div class="section-heading"><h3>Your research notebook</h3><span>'+entries.length+' decisions</span></div>'+entries.map(([key,value])=>'<div class="notebook-row"><button data-research="'+esc(key)+'">'+esc(value.name||key)+' →</button><span class="tag">'+esc(value.status||'Research more')+'</span><p>'+esc(value.note||'No note added')+'</p><button data-clear-decision="'+esc(key)+'">Remove</button></div>').join('');
+}
+document.addEventListener('click',e=>{
+  const button=e.target.closest('button');if(!button)return;const d=button.dataset;
+  if(d.research){location.hash='ipo='+encodeURIComponent(d.research);if(location.hash==='\u0023ipo='+encodeURIComponent(d.research)&&!$('.modal-backdrop'))openModal(d.research);}
+  if(d.discoveryBoard){state.discoveryBoard=d.discoveryBoard;$$('[data-discovery-board]').forEach(b=>{b.classList.toggle('on',b.dataset.discoveryBoard===d.discoveryBoard);b.setAttribute('aria-pressed',b.dataset.discoveryBoard===d.discoveryBoard);});renderHome();}
+  if(d.loadResearch!==undefined){state.discoveryLimit=(state.discoveryLimit||12)+12;renderHome();}
+  if(d.loadPerformance!==undefined){state.performanceLimit=(state.performanceLimit||18)+18;renderPerformance();}
+  if(d.decision){const r=allIpos().find(r=>r.key===d.decisionKey);if(!r)return;state.decisions[r.key]={...state.decisions[r.key],name:r.name,status:d.decision,updated:new Date().toISOString()};save(LS.decisions,state.decisions);
+    $$('.decision-options button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.decision===d.decision));renderHome();renderNotebook();}
+  if(d.clearDecision){delete state.decisions[d.clearDecision];save(LS.decisions,state.decisions);renderNotebook();renderHome();}
+});
+document.addEventListener('input',e=>{const key=e.target.dataset.noteKey;if(!key)return;const r=allIpos().find(r=>r.key===key);
+  state.decisions[key]={...state.decisions[key],name:r?.name||key,status:state.decisions[key]?.status||'Research more',note:e.target.value,updated:new Date().toISOString()};save(LS.decisions,state.decisions);$('#note-saved').textContent='Saved in this browser';renderNotebook();});
+['performance-search','performance-board','performance-sort'].forEach(id=>$( '#'+id).addEventListener(id==='performance-search'?'input':'change',renderPerformance));
+
+function legacyCard(r, t){
   const L = r.listing;
   return `<article class="card ${r.status}" tabindex="0" data-open="${esc(r.key)}">
     <h3>${esc(r.name)} ${r.board === 'SME' ? '<span class="tag">SME</span>' : ''}</h3>
@@ -1436,7 +1513,8 @@ function card(r, t){
       ${L && L.listPrice !== null ? `<dt>Listed at</dt><dd>${money(L.listPrice)}</dd>` : ''}
     </dl>
     ${bottomLine(r)}
-    ${r.report ? `<div style="margin-top:9px">${verdictChip(r.report)}</div>` : ''}
+    ${issueActions(r)}
+    ${r.report && reportIsCurrent(r) ? `<div style="margin-top:9px">${verdictChip(r.report)}</div>` : ''}
   </article>`;
 }
 
@@ -1476,7 +1554,7 @@ function renderToday(){
     });
 
   const closing = state.todayWhen === 'closing';
-  $('#today-title').textContent = `Today · ${fmtDate(t)}`;
+  $('#today-title').textContent = `AI tools · ${fmtDate(t)}`;
   $('#today-sub').textContent = rows.length
     ? (closing
         ? `${rows.length} IPO${rows.length === 1 ? '' : 's'} clos${rows.length === 1 ? 'es' : 'e'} ` +
@@ -1500,7 +1578,7 @@ function renderToday(){
   if (!rows.length){
     $('#today-compare').innerHTML = '';
     $('#today-list').innerHTML =
-      `<div class="empty">${emptyText('Nothing is open today. The IPOs tab lists what is coming up.')}</div>`;
+      `<div class="empty">${emptyText('No IPOs are open for application today. Discover lists upcoming issues; use Refresh to check for updates.')}</div>`;
     return;
   }
 
@@ -1519,7 +1597,7 @@ function renderCompare(rows, t){
   const items = rows.map((r) => {
     const opts = categoryOptions(r);
     const rec = recommendCategory(r);
-    const retail = opts.find((o) => o.key === 'retail') || null;
+    const retail = opts.find((o) => o.key === 'retail'||o.key==='individual') || null;
     return { r, opts, rec, retail,
       affordable: !budget || !retail || retail.amount <= budget };
   });
@@ -1541,7 +1619,7 @@ function renderCompare(rows, t){
         <table class="compare-table">
           <thead><tr>
             <th>IPO</th><th>Closes</th>
-            <th>Retail application</th><th>Best odds</th><th>GMP</th>
+            <th>Individual entry</th><th>Entry category</th><th>GMP</th>
           </tr></thead>
           <tbody>${items.map((it) => compareRow(it, t)).join('')}</tbody>
         </table>
@@ -1550,13 +1628,10 @@ function renderCompare(rows, t){
     </div>`;
 }
 
-const odds = (times) =>
-  times === null ? '—'
-  : times <= 1 ? 'full allotment likely'
-  : `1 in ${times.toFixed(1)}`;
+const odds = (times) => times == null ? 'not available' : times.toFixed(2)+'× subscribed · not allotment odds';
 
 /**
- * One comparison row. Retail and the best-odds category are separate columns
+ * One comparison row. Retail and the subscription-comparison category are separate columns
  * because they answer different questions, and each carries its own cost —
  * naming a category beside somebody else's price tag is how a ₹10L bHNI
  * recommendation ends up looking like a ₹15,000 one.
@@ -1578,15 +1653,15 @@ function compareRow({ r, opts, rec, retail, affordable }, t){
   return `<tr class="clickable ${affordable ? '' : 'over-budget'}" data-open="${esc(r.key)}">
     <td class="name">${esc(r.name)}${r.board === 'SME' ? ' <span class="tag">SME</span>' : ''}</td>
     <td data-label="Closes" class="${days === 0 ? 'urgent' : ''}">${closes}</td>
-    <td data-label="Retail application">${noData
+    <td data-label="Individual entry">${noData
       ? `<span class="muted">${noData}</span>`
       : retail
         ? `${inr(retail.amount)}<span class="sub2"> · ${odds(retail.times)}</span>`
         : '—'}</td>
-    <td data-label="Best odds">${noData ? '<span class="muted">—</span>'
+    <td data-label="Entry category">${noData ? '<span class="muted">—</span>'
       : best
         ? `<b>${esc(best.label.replace(/ \(.*\)/, ''))}</b> ${inr(best.amount)}<span class="sub2"> · ${odds(best.times)}</span>`
-        : `<span class="muted">retail is best</span>`}</td>
+        : `<span class="muted">lowest entry amount</span>`}</td>
     <td data-label="GMP" class="${r.gmpPct === null ? '' : moveClass(r.gmpPct)}">${
       r.gmpPct === null ? '—' : signed(r.gmpPct)}</td>
   </tr>`;
@@ -1647,11 +1722,11 @@ function todayCard(r, t){
           ${r.gmp !== null ? ` · GMP ${money(r.gmp)}${r.gmpPct !== null ? ` (${signed(r.gmpPct)})` : ''}` : ''}
         </div>
       </div>
-      ${r.report ? verdictChip(r.report) : ''}
+      ${r.report&&reportIsCurrent(r) ? verdictChip(r.report) : ''}
     </div>
 
     ${rec ? `<div class="verdict-line">
-      <span class="pick">Apply under <b>${esc(rec.pick.label)}</b></span>
+      <span class="pick">Entry category <b>${esc(rec.pick.label)}</b></span>
       <span class="why">${esc(rec.why)}</span>
     </div>` : `<div class="verdict-line">
       <span class="why">${esc(noRecReason(r, opts))}</span>
@@ -1660,7 +1735,7 @@ function todayCard(r, t){
     ${opts.length ? `<table class="cat-table">
       <thead><tr><th>Category</th><th>Minimum</th>
         <th>${hasTimes ? 'Subscribed' : 'Applications'}</th>
-        <th>${hasTimes ? 'Odds of a lot' : 'Share of applicants'}</th></tr></thead>
+        <th>${hasTimes ? 'Subscription context' : 'Share of applicants'}</th></tr></thead>
       <tbody>${opts.map((o) => `
         <tr class="${best && o.key === best.key ? 'best' : ''}">
           <td class="name">${esc(o.label)}</td>
@@ -1668,10 +1743,10 @@ function todayCard(r, t){
           <td data-label="${hasTimes ? 'Subscribed' : 'Applications'}">${hasTimes
             ? (o.times === null ? '—' : o.times.toFixed(2) + '×')
             : (o.applications === null ? '—' : o.applications.toLocaleString('en-IN'))}</td>
-          <td data-label="${hasTimes ? 'Odds of a lot' : 'Share of applicants'}">${hasTimes
+          <td data-label="${hasTimes ? 'Subscription context' : 'Share of applicants'}">${hasTimes
             ? (o.times === null ? '—'
-               : o.times <= 1 ? 'full allotment likely'
-               : `about 1 in ${o.times.toFixed(1)}`)
+               : o.times <= 1 ? 'bidding snapshot'
+               : 'not a probability')
             : (o.applications === null || !totalApps ? '—'
                : `${((o.applications / totalApps) * 100).toFixed(1)}% of applicants`)}</td>
         </tr>`).join('')}</tbody>
@@ -1688,6 +1763,7 @@ function todayCard(r, t){
 /** Why no category could be recommended — the reasons are quite different. */
 function noRecReason(r, opts){
   if (!opts.length){
+    if(r.board==='SME'&&r.info?.lotSize)return 'SME minimum terms could not be validated. Verify the current issue documents; no amount has been assumed.';
     return r.info?.lotSize
       ? 'Price band not announced yet, so the per-category amounts cannot be worked out.'
       : 'Lot size not published yet, so the per-category amounts cannot be worked out.';
@@ -1767,6 +1843,7 @@ function openAiWith(rows){
 // --------------------------------------------------------------- GMP tab
 
 function renderGmp(){
+  $('#history-provenance').textContent='History includes an older archive with unverified observation provenance. Only explicitly sourced observations enter the accuracy scorecard; gaps are not live quotes.';
   const rows = applyFilters(allIpos())
     .filter((r) => r.gmp !== null)
     .map((r) => ({ ...r, change: gmpChange(r.histKey) }));
@@ -1816,7 +1893,7 @@ function renderGmp(){
       <td data-label="Subscribed" class="num">${r.subscription != null ? r.subscription.toFixed(2)+'×' : '—'}</td>
       <td data-label="Change" class="num ${ch>0?'up':ch<0?'down':''}">${ch===null?'—':(ch>0?'+':'')+ch}</td>
       <td data-label="Trend" class="wide">${sparkline(r.histKey)}</td>
-      <td data-label="Verdict" class="wide">${verdictChip(r.report) || '—'}</td>
+      <td data-label="Verdict" class="wide">${reportIsCurrent(r)?(verdictChip(r.report)||'—'):'—'}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="10" class="empty">No GMP data for these filters.</td></tr>`;
 }
@@ -1934,11 +2011,12 @@ function renderFacts(host, r){
   add('Lot size', lot ? `${lot} shares` : null,
     r.info?.faceValue ? `face value ₹${r.info.faceValue}` : '');
 
-  add('Minimum application', lot && cap ? inr(lot * cap) : null, 'one lot at the cap price');
+  const entry=categoryOptions(r)[0];
+  add('Minimum application',entry?inr(entry.amount):null,entry?entry.lots+' lot(s) at cap price; confirm issue terms':'Issue terms unavailable');
 
   // Above ₹2L an application is no longer retail, so the lot count that keeps
   // you inside the retail cap is a real decision the applicant makes.
-  if (lot && cap){
+  if (lot && cap && r.board!=='SME'){
     const perLot = lot * cap;
     const maxRetail = r.info?.maxRetailAmount || 200000;
     const lots = Math.floor(maxRetail / perLot);
@@ -1957,21 +2035,8 @@ function renderFacts(host, r){
       'at the current premium, if it lists there — GMP is not a forecast');
   }
 
-  // Once a category is oversubscribed allotment is a lottery, so the multiple
-  // is directly the odds of a single application getting one lot.
-  // A retail row can exist with no multiple on it: NSE reports SME bidding as
-  // application counts. `null > 1` is false, which sent that case down the
-  // branch that formats the multiple and threw on it.
-  if (retail && retail.times !== null && retail.times !== undefined){
-    add('Retail allotment odds',
-      retail.times > 1 ? `about 1 in ${retail.times.toFixed(1)}` : 'likely full allotment',
-      retail.times > 1
-        ? `retail is ${retail.times.toFixed(2)}× subscribed`
-        : `retail is only ${retail.times.toFixed(2)}× subscribed`);
-  } else if (retail && retail.applications){
-    add('Retail applications', retail.applications.toLocaleString('en-IN'),
-      'NSE reports SME bidding as a count of applications, not a multiple');
-  }
+  if(retail && retail.times!=null)add('Retail subscription',retail.times.toFixed(2)+'×',
+    'Bids snapshot, not the probability of an allotment. Final valid application counts and allocation rules are needed.');
 
   // The listed price and current price are already the headline stats above,
   // so this panel adds only what they do not say: the move since listing day,
@@ -2300,73 +2365,12 @@ const SHNI_CAP  = 1000000;   // above this it is big-HNI
  * is oversubscribed, allotment is a lottery, so 3x subscribed is about a one
  * in three chance of a single lot.
  */
-function categoryOptions(r){
-  const cap = capPrice(r);
-  const lot = r.info?.lotSize;
-  if (!cap || !lot) return [];
+function categoryOptions(r){return Core.categories(r);}
 
-  const perLot = cap * lot;
-  const sub = (k) => (r.categories || []).find((c) => c.key === k) || null;
-
-  return [
-    { key:'retail', label:'Retail',            lots: 1 },
-    { key:'shni',   label:'sHNI (₹2L–₹10L)',   lots: Math.ceil(RETAIL_CAP / perLot) },
-    { key:'bhni',   label:'bHNI (above ₹10L)', lots: Math.ceil(SHNI_CAP  / perLot) },
-  ].map((o) => {
-    const s = sub(o.key);
-    return {
-      ...o,
-      amount: o.lots * perLot,
-      times: s ? s.times : null,
-      // SME issues publish no per-category multiple — only how many people
-      // applied. See the shape note in lib/sources.js.
-      applications: s ? s.applications : null,
-    };
-  });
-}
-
-/**
- * Which category to apply under, argued from the numbers rather than guessed.
- *
- * Retail is the default because it is the cheapest way in and the only one
- * most people will use. It is only worth naming a bigger category when its
- * odds are materially better — a marginal edge does not justify five times
- * the money at risk.
- */
 function recommendCategory(r){
-  const opts = categoryOptions(r).filter((o) => o.times !== null);
-  if (!opts.length) return null;
-
-  const retail = opts.find((o) => o.key === 'retail');
-  const best = opts.reduce((a, b) => (b.times < a.times ? b : a));
-
-  if (retail && retail.times <= 1){
-    return {
-      pick: retail,
-      why: `Retail is only ${retail.times.toFixed(2)}× subscribed, so a single ` +
-           `${inr(retail.amount)} application should be allotted in full.`,
-    };
-  }
-
-  if (!retail) return { pick: best, why: `${best.label} has the lowest subscription at ${best.times.toFixed(2)}×.` };
-
-  // Materially better means roughly half the crowding, not a rounding error.
-  if (best.key !== 'retail' && best.times < retail.times * 0.6){
-    return {
-      pick: best,
-      why: `${best.label} is ${best.times.toFixed(2)}× against retail's ${retail.times.toFixed(2)}×, ` +
-           `so the odds are better — but it needs ${inr(best.amount)} versus ${inr(retail.amount)}.`,
-      alt: retail,
-    };
-  }
-
-  return {
-    pick: retail,
-    why: best.key === 'retail'
-      ? `Retail has the lowest subscription at ${retail.times.toFixed(2)}×, and the smallest cheque at ${inr(retail.amount)}.`
-      : `Retail at ${retail.times.toFixed(2)}× is not meaningfully worse than ${best.label} at ${best.times.toFixed(2)}×, ` +
-        `and needs ${inr(retail.amount)} instead of ${inr(best.amount)}.`,
-  };
+  const opts=categoryOptions(r);if(!opts.length)return null;
+  const pick=opts.reduce((a,b)=>a.amount<=b.amount?a:b);
+  return {pick,why:'Lowest entry amount: '+inr(pick.amount)+'. Subscription measures bids, not exact allotment odds. Confirm eligibility and final issue terms.'};
 }
 
 /**
@@ -2384,13 +2388,13 @@ function aiPrompt(rows){
     ? [
         `I am a retail investor in India. Every IPO below closes for applications TODAY (${fmtDate(t)}).`,
         `After tonight I cannot apply to any of them, so I need a decision on each one now.`,
-        `Live figures from NSE and IPO Watch follow.`,
+        `Recorded figures from NSE and IPO Watch follow; check their timestamps below.`,
         `Application categories: Retail up to ₹2,00,000, sHNI ₹2,00,000–₹10,00,000, bHNI above ₹10,00,000.`,
         '',
       ]
     : [
         `I am a retail investor in India deciding which IPOs to apply for today (${fmtDate(t)}).`,
-        `Here are the issues currently open, with live figures from NSE and IPO Watch.`,
+        `Here are the issues currently open, with recorded figures from NSE and IPO Watch.`,
         `Application categories: Retail up to ₹2,00,000, sHNI ₹2,00,000–₹10,00,000, bHNI above ₹10,00,000.`,
         '',
       ];
@@ -2420,7 +2424,7 @@ function aiPrompt(rows){
     if (r.categories?.length){
       lines.push('- Category-wise subscription:');
       for (const c of r.categories){
-        lines.push(c.times !== null
+        lines.push(c.times != null
           ? `    - ${c.label}: ${c.times.toFixed(2)}x subscribed`
           : `    - ${c.label}: ${(c.applications ?? 0).toLocaleString('en-IN')} applications` +
             ' (NSE publishes no multiple for SME issues)');
@@ -2479,7 +2483,7 @@ function aiPrompt(rows){
       '1. APPLY or SKIP — a straight verdict, no hedging.',
       '2. If APPLY: which category (Retail, sHNI or bHNI), the exact amount that category needs',
       '   at the cap price, and why that category rather than the others. Pick the category on',
-      '   allotment odds and what the cheque buys, not on how much I could theoretically bid.',
+      '   subscription demand and what the cheque buys. Do not infer exact allotment odds.',
       '3. One short line of reasoning, naming the figure that decided it.',
       '',
       'Lead with a table: IPO | Apply or skip | Category | Amount needed | Why.',
@@ -2506,9 +2510,10 @@ function aiPrompt(rows){
   }
 
   lines.push(
-    'Rules for reading the figures: a category with a LOWER subscription multiple has BETTER',
-    'allotment odds, because allotment is a lottery once a category is oversubscribed. Retail',
-    'applies up to ₹2,00,000, sHNI ₹2,00,000-₹10,00,000, bHNI above ₹10,00,000. Grey market',
+    `Snapshot timestamps (not a continuous live feed): IPO bids ${state.sourceTimes.ipos||'unknown'} (${sourceState('ipos')}); GMP ${state.sourceTimes.gmp||'unknown'} (${sourceState('gmp')}).`,
+    'Rules for reading the figures: subscription measures bids, not exact allotment probability.',
+    'Do not calculate 1 / subscription as an allotment chance. Valid application counts and allocation rules are required.',
+    'Mainboard and SME differ: use supplied whole-lot amounts and verify the issue terms. Grey market',
     'premium is unofficial and easily manipulated - treat it as sentiment, never a forecast.',
     'Use the figures above plus what you know about these companies, and say clearly which',
     'parts are your own judgement rather than these numbers.',
@@ -2534,42 +2539,31 @@ const AI_TARGETS = [
  * trades at now.
  */
 function modalStats(r){
-  const L = r.listing;
-  const band = `<div class="stat"><dt>Price band</dt>
-    <dd style="font-size:15px">${esc(r.priceBand || '—')}</dd></div>`;
-  const subs = `<div class="stat"><dt>Subscribed</dt><dd>${
-    r.subscription != null ? r.subscription.toFixed(2) + '×' : '—'}</dd></div>`;
-
-  if (L && L.cmp !== null){
-    return band + `
-      <div class="stat"><dt>Listed at</dt><dd>${
-        L.listPrice === null ? '—' : money(L.listPrice)}${
-        L.listGainPct !== null
-          ? ` <span class="delta ${moveClass(L.listGainPct)}">${signed(L.listGainPct)}</span>`
-          : ''}</dd></div>
-      <div class="stat"><dt>Trading now</dt><dd>${money(L.cmp)}${
-        L.cmpGainPct !== null
-          ? ` <span class="delta ${moveClass(L.cmpGainPct)}">${signed(L.cmpGainPct)}</span>`
-          : ''}</dd></div>` + subs;
-  }
-
-  // The premium leads: it is the number a reader opens this view to check, and
-  // the percentage is the half of it that compares across price bands.
-  return `
-    <div class="stat stat-lead"><dt>Implied gain</dt><dd class="${
-      r.gmpPct === null ? '' : moveClass(r.gmpPct)}">${
-      r.gmpPct !== null ? signed(r.gmpPct) : '—'}</dd>
-      <p class="stat-sub">${r.gmp === null ? 'no premium quoted' : `${money(r.gmp)} GMP`}</p></div>
-    ` + band + subs;
+  if(r.status==='listed'){const p=Core.performance(r);return '<div class="stat"><dt>Issue price</dt><dd>'+money(p.issue)+'</dd></div><div class="stat"><dt>Listing opening price</dt><dd>'+money(p.open)+'</dd></div><div class="stat"><dt>Listing-day close</dt><dd>'+money(p.close)+'</dd></div><div class="stat"><dt>Latest recorded</dt><dd>'+money(p.latest)+'</dd></div>';}
+  return '<div class="stat"><dt>Price band</dt><dd>'+esc(r.priceBand||'Not announced')+'</dd></div><div class="stat"><dt>GMP · unofficial</dt><dd>'+money(r.gmp)+'</dd></div><div class="stat"><dt>Subscription</dt><dd>'+(r.subscription==null?'Not available':r.subscription.toFixed(2)+'×')+'</dd></div>';
 }
 
-function openModal(key){
+function refreshOpenDetail(){
+  const old=$('.modal-backdrop');if(!old)return;
+  const scroll=$('.modal-body',old).scrollTop,expanded=$('.advanced-research',old).open;
+  const slider=$('#scenario-return',old)?.value,active=document.activeElement;
+  const focusId=old.contains(active)?active.id:null,start=active.selectionStart,end=active.selectionEnd;
+  const returnFocus=old._returnFocus;
+  old._dispose();openModal(old.dataset.issueKey,{returnFocus,quiet:true});
+  const back=$('.modal-backdrop');if(!back)return;
+  $('.advanced-research',back).open=expanded;
+  const range=$('#scenario-return',back);if(range&&slider!=null){range.value=slider;range.dispatchEvent(new Event('input'));}
+  const focus=focusId&&document.getElementById(focusId);if(focus){focus.focus({preventScroll:true});if(focus.setSelectionRange&&start!=null)focus.setSelectionRange(start,end);}
+  $('.modal-body',back).scrollTop=scroll;
+}
+function openModal(key,options={}){
   const r = allIpos().find((x) => x.key === key);
   if (!r) return;
 
   const t = todayISO();
   const back = document.createElement('div');
   back.className = 'modal-backdrop';
+  back.dataset.issueKey=key;
   back.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(r.name)}">
       <div class="modal-head">
@@ -2578,9 +2572,12 @@ function openModal(key){
           <div class="sub">${r.symbol ? esc(r.symbol)+' · ' : ''}${timingText(r, t)} ·
             ${fmtDate(r.start)} – ${fmtDate(r.end)}</div>
         </div>
+        <button class="icon" data-detail-refresh aria-label="Refresh source data" title="Refresh source data">↻</button>
         <button class="icon" data-close aria-label="Close">✕</button>
       </div>
       <div class="modal-body">
+        <div class="span-2" id="modal-research"></div>
+        <details class="span-2 chart-card advanced-research"><summary>Detailed figures, history &amp; documents</summary><div class="advanced-grid">
         <div class="stat-row span-2">${modalStats(r)}</div>
 
         <!-- Demand first. Which category is least crowded is the question this
@@ -2646,6 +2643,7 @@ function openModal(key){
           <a href="https://www.google.com/search?q=${encodeURIComponent(r.name+' IPO RHP details')}"
              target="_blank" rel="noopener">Search RHP &amp; reviews ↗</a>
         </div>
+        </div></details>
       </div>
     </div>`;
 
@@ -2656,15 +2654,28 @@ function openModal(key){
   // data, and one bad field used to throw partway through and leave the dialog
   // with no close handler at all — open, half-empty and impossible to dismiss.
   // The way out is attached first so it cannot be lost.
-  const close = () => {
+  const returnFocus=options.returnFocus||document.activeElement;
+  back._returnFocus=returnFocus;
+  back._dispose=()=>{
     back.remove();
     document.body.style.overflow = '';
     document.removeEventListener('keydown', onKey);
-    if (location.hash.startsWith('#ipo=')) history.replaceState(null, '', '#ipos');
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const close = () => {
+    back._dispose();
+    if (location.hash.startsWith('#ipo=')) history.replaceState(null, '', '#'+(state.activeTab||'home'));
+    if(returnFocus?.isConnected)returnFocus.focus({preventScroll:true});
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close();
+    else if(e.key==='Tab'){
+      const items=$$('button:not([disabled]),a[href],input,select,textarea,summary',back).filter(el=>el.getClientRects().length),first=items[0],last=items.at(-1);
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
+    }
+  };
 
   back.addEventListener('click', (e) => {
+    if(e.target.closest('[data-detail-refresh]')){refresh({force:true});return;}
     const chip = e.target.closest('[data-range]');
     if (chip){
       setRange(chip.dataset.range);
@@ -2674,8 +2685,9 @@ function openModal(key){
     if (e.target === back || e.target.closest('[data-close]')) close();
   });
   document.addEventListener('keydown', onKey);
-  $('[data-close]', back).focus();
+  if(!options.quiet)$('[data-close]', back).focus({preventScroll:true});
 
+  renderResearch(back,r);
   renderReport($('#modal-report', back), r);
 
   // NII is the sum of its two halves, which are charted separately.
@@ -2703,7 +2715,7 @@ function openModal(key){
   $('#modal-bars-note', back).textContent = asApplications
     ? 'NSE reports SME bidding as a count of applications rather than a multiple. ' +
       'Fewer applications for a category means less competition for its share of the book.'
-    : 'A category with a lower multiple has better allotment odds.';
+    : 'Subscription multiples measure demand; they are not allotment probabilities.';
 
   Charts.barChart($('#modal-bars', back), bars, {
     suffix: asApplications ? '' : '×',
@@ -2803,9 +2815,9 @@ function renderReport(host, r){
 
   host.innerHTML = `<div class="report">
     <div class="report-head">
-      <h4>Apply or avoid</h4>
-      ${verdictChip(rep)}
-      <span class="tag">${esc(rep.confidence)} confidence</span>
+      <h4>Research report</h4>
+      ${reportIsCurrent(r)?verdictChip(rep):'<span class="tag">Archived · older or unverified inputs</span>'}
+      <span class="tag">${reportIsCurrent(r)?esc(rep.confidence):'low · stale/incomplete inputs'} confidence</span>
       <span class="tag">${esc(rep.riskLevel)} risk</span>
     </div>
     <p class="report-headline">${esc(rep.headline)}</p>
@@ -2847,6 +2859,7 @@ function renderReport(host, r){
       </div>` : ''}
 
     ${prospectusBlock(r)}
+    <p class="note">Input health: IPO bids ${sourceState('ipos')}; GMP ${sourceState('gmp')}. Report statements may refer to older inputs; verify against the source documents.</p>
 
     <p class="disclaimer">Generated by ${esc(meta?.model || 'Claude')} on
       ${meta ? new Date(meta.generatedAt).toLocaleString('en-IN') : 'unknown date'} from the figures
@@ -2885,15 +2898,16 @@ function renderModalAllot(host, r){
 
 // ------------------------------------------------------- applications tab
 
-function getIds(){ return load(LS.ids, []); }
-function setIds(v){ save(LS.ids, v); }
+let sessionIds=load(LS.ids,[]);
+function getIds(){return sessionIds;}
+function setIds(v){sessionIds=v;if($('#remember-ids').checked)save(LS.ids,v);else try{localStorage.removeItem(LS.ids);}catch{}}
 
 function renderIds(){
   const ids = getIds();
   $('#pan-list').innerHTML = ids.length
-    ? ids.map((id,i) => `<span class="pill"><b>${esc(id.value)}</b>
+    ? ids.map((id,i) => `<span class="pill"><b>${esc(maskId(id.value))}</b>
         <small>${esc(id.label||'')}</small>
-        <button data-del="${i}" title="Remove" aria-label="Remove ${esc(id.value)}">×</button></span>`).join('')
+        <button data-del="${i}" title="Remove" aria-label="Remove ${esc(maskId(id.value))}">×</button></span>`).join('')
     : `<span class="empty">No PANs or DP IDs saved yet. They stay in this browser only.</span>`;
 }
 
@@ -2915,7 +2929,7 @@ function renderAllot(){
         ${REGISTRARS.map((x,i)=>`<option value="${i}"${picked[r.key]===i?' selected':''}>${esc(x.name)}</option>`).join('')}
       </select></td>
       <td data-label="Check">${ids.length
-        ? ids.map((id,ii)=>`<button data-check="${esc(r.key)}" data-id="${ii}">${esc(id.label||id.value)}</button>`).join(' ')
+        ? ids.map((id,ii)=>`<button data-check="${esc(r.key)}" data-id="${ii}">${esc(id.label||maskId(id.value))}</button>`).join(' ')
         : '<span class="empty" style="padding:0">Add a PAN above</span>'}</td>
     </tr>`).join('') || `<tr><td colspan="4" class="empty">No recently closed IPOs.</td></tr>`;
 }
@@ -2935,28 +2949,118 @@ async function copyText(text){
 
 // ---------------------------------------------------------------- wiring
 
+function maskId(value){return $('#reveal-ids').checked?value:String(value).slice(0,2)+'••••'+String(value).slice(-4);}
+function issueActions(r){return `<div class="issue-actions">
+  <button data-watch="${esc(r.key)}" aria-pressed="${state.watch.includes(r.key)}">${state.watch.includes(r.key)?'★ Saved':'☆ Save'}</button>
+  <button data-compare="${esc(r.key)}" aria-pressed="${state.compare.includes(r.key)}">${state.compare.includes(r.key)?'✓ Comparing':'Compare'}</button>
+  <button data-track="${esc(r.key)}">${state.applications[r.key]?'My application':'Track application'}</button>
+  <button data-calendar="${esc(r.key)}">Calendar ↓</button></div>`;}
+function renderHome(){
+  const rows=allIpos(),today=todayISO(),query=($('#home-search').value||'').trim().toLowerCase(),board=state.discoveryBoard||'all';
+  const open=rows.filter(r=>r.status==='open'),closing=open.filter(r=>r.end===today),upcoming=rows.filter(r=>r.status==='upcoming');
+  const saved=rows.filter(r=>state.watch.includes(r.key));
+  $('#home-stats').innerHTML=[['Closing today',closing.length,'closing'],['Open now',open.length,'open'],['Upcoming',upcoming.length,'upcoming'],['Saved',saved.length,'saved']]
+    .map(([label,count,scope])=>'<button data-home-scope="'+scope+'" aria-pressed="'+((state.homeScope||'open')===scope)+'"><b>'+count+'</b><span>'+label+'</span><i aria-hidden="true">↗</i></button>').join('');
+  const scope=state.homeScope||'open';
+  const scoped=query?rows:scope==='closing'?closing:scope==='upcoming'?upcoming:scope==='saved'?saved:open;
+  const visible=scoped.filter(r=>(board==='all'||r.board===board)&&(!query||(r.name+' '+(r.symbol||'')+' '+(fundFor(r).about||'')).toLowerCase().includes(query)));
+  const title=query?'Research results':scope==='closing'?'Closing today':scope==='upcoming'?'Coming to market':scope==='saved'?'Your saved research':'Open for research';
+  $('#home-results').innerHTML='<div class="section-heading"><h3>'+title+'</h3><span>'+visible.length+' issues</span></div><div class="cards research-cards">'+
+    (visible.slice(0,state.discoveryLimit||12).map(r=>card(r,today)).join('')||'<p class="empty">No issues here. Choose another status or search a business.</p>')+'</div>'+
+    (visible.length>(state.discoveryLimit||12)?'<button class="load-more" data-load-research>Show more companies</button>':'');
+  $('#home-watchlist').hidden=true;$('#home-watchlist').textContent='';
+  const events=calendarEvents().filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,3);
+  $('#home-next').hidden=!!query;
+  $('#home-next').innerHTML='<div class="section-heading"><h3>Dates to keep in mind</h3><a href="#cal">Calendar →</a></div>'+events.map(e=>'<div class="milestone"><b>'+fmtDate(e.date)+'</b><span>'+esc(e.label)+'</span></div>').join('');
+  renderSelection(rows);
+}
+function renderSelection(rows){
+  const chosen=state.compare.map(key=>rows.find(r=>r.key===key)).filter(Boolean),host=$('#home-comparison');
+  host.hidden=!chosen.length;if(!chosen.length){host.innerHTML='';return;}
+  const financial=r=>state.fundamentals[r.key]?.financials?.slice(-1)[0],kpis=r=>state.fundamentals[r.key]?.kpis||{};
+  const fields=[['Board',r=>r.board],['Open / close',r=>fmtDate(r.start)+' – '+fmtDate(r.end)],['Minimum entry',r=>categoryOptions(r)[0]?inr(categoryOptions(r)[0].amount):'Terms unavailable'],
+    ['Subscription',r=>r.subscription==null?'Not available':r.subscription.toFixed(2)+'×'],['GMP · unofficial',r=>r.gmp==null?'Stale or unavailable':money(r.gmp)],
+    ['GMP source',()=>sourceState('gmp')],['Price band',r=>r.priceBand||'Not available'],
+    ['Financial period',r=>financial(r)?.period||'Not available'],['Revenue (₹ crore)',r=>financial(r)?.revenue??'Not available'],
+    ['Profit after tax (₹ crore)',r=>financial(r)?.pat??'Not available'],['Reported P/E',r=>kpis(r).pe??'Not available'],
+    ['Debt / equity',r=>kpis(r).debtEquity??'Not available'],['Financial source date',r=>state.fundamentals[r.key]?.fetchedAt?.slice(0,10)||'Not available'],
+    ['Source documents',r=>r.info?.rhpUrl?'RHP available in details':'Not available']];
+  host.innerHTML=`<div class="section-heading"><h3>Compare ${chosen.length} / 3 issues</h3><button id="clear-comparison">Clear comparison</button></div><div class="tablewrap"><table><thead><tr><th>Figure</th>${chosen.map(r=>`<th>${esc(r.name)}<button data-compare="${esc(r.key)}" aria-label="Remove ${esc(r.name)} from comparison">×</button></th>`).join('')}</tr></thead><tbody>${fields.map(([name,value])=>`<tr><th>${name}</th>${chosen.map(r=>`<td>${esc(value(r))}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="note">IPO bids: ${esc(state.sourceTimes.ipos||'unknown')}. GMP: ${esc(state.sourceTimes.gmp||'unknown')}. Subscription is not an allotment probability. Missing financial figures have not been estimated.</p>`;
+}
+const APPLICATION_STAGES=['Applied','Mandate approved','Allotted','Not allotted','Refund / unblock complete','Listed'];
+function renderPersonal(){
+  const rows=allIpos();$('#application-tracker').innerHTML=Object.entries(state.applications).map(([key,application])=>{
+    const r=rows.find(r=>r.key===key);return `<article class="application-row"><div><b>${esc(r?.name||application.name)}</b><p class="note">Your update: ${esc(application.updated?.slice(0,10)||'')}</p></div>
+      <label>Status<select data-application-stage="${esc(key)}">${APPLICATION_STAGES.map(stage=>`<option${stage===application.stage?' selected':''}>${stage}</option>`).join('')}</select></label>
+      <label>Applied amount (₹)<input type="number" min="0" step="1" data-application-amount="${esc(key)}" value="${Number(application.amount)||0}"></label>
+      <button data-remove-application="${esc(key)}">Remove</button></article>`;
+  }).join('')||'<p class="empty">Choose Track application on any IPO card to start. Your status is updated manually.</p>';
+}
+function downloadCalendar(key){
+  const row=allIpos().find(r=>r.key===key);if(!row)return;
+  const events=calendarEvents().filter(e=>e.key===key);if(!events.length){toast('No confirmed or expected dates available');return;}
+  const blob=new Blob([Core.calendar(row.name,events)],{type:'text/calendar;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download=key+'-dates.ics';link.style.display='none';document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+$('#home-search').addEventListener('input',renderHome);
+$('#remember-ids').addEventListener('change',()=>{save(LS.remember,$('#remember-ids').checked);setIds(sessionIds);});
+$('#reveal-ids').addEventListener('change',()=>{renderIds();renderAllot();});
+$('#delete-ids').addEventListener('click',()=>{if(!sessionIds.length||confirm('Delete all PANs and DP IDs stored in this browser?')){setIds([]);try{localStorage.removeItem(LS.ids);}catch{}renderIds();renderAllot();}});
+document.addEventListener('change',e=>{
+  const stage=e.target.dataset.applicationStage,amount=e.target.dataset.applicationAmount,key=stage||amount;
+  if(!key||!state.applications[key])return;
+  if(stage)state.applications[key].stage=APPLICATION_STAGES.includes(e.target.value)?e.target.value:'Applied';
+  if(amount)state.applications[key].amount=Math.max(0,Number(e.target.value)||0);
+  state.applications[key].updated=new Date().toISOString();save(LS.applications,state.applications);renderHome();
+});
+document.addEventListener('click',e=>{
+  const button=e.target.closest('button');if(!button)return;
+  const d=button.dataset;
+  if(d.watch){state.watch=state.watch.includes(d.watch)?state.watch.filter(k=>k!==d.watch):state.watch.concat(d.watch);save(LS.watch,state.watch);render();}
+  if(d.compare){if(state.compare.includes(d.compare))state.compare=state.compare.filter(k=>k!==d.compare);
+    else if(state.compare.length<3)state.compare.push(d.compare);else{toast('Compare up to three issues. Remove one first.');return;}
+    save(LS.compare,state.compare);render();if(state.compare.length)location.hash='home';}
+  if(button.id==='clear-comparison'){state.compare=[];save(LS.compare,[]);render();}
+  if(d.track){const r=allIpos().find(r=>r.key===d.track);if(r&&!state.applications[d.track]){
+    state.applications[d.track]={name:r.name,stage:'Applied',amount:categoryOptions(r)[0]?.amount||0,updated:new Date().toISOString()};save(LS.applications,state.applications);}
+    render();location.hash='allot';}
+  if(d.removeApplication){if(confirm('Remove this manually tracked application?')){delete state.applications[d.removeApplication];save(LS.applications,state.applications);render();}}
+  if(d.calendar)downloadCalendar(d.calendar);
+  if(d.homeScope){if(d.homeScope==='applications')location.hash='allot';else{state.homeScope=d.homeScope;renderHome();}}
+});
+
 function render(){
-  renderToday();
-  renderIpos();
-  renderGmp();
+  renderHome();renderPerformance();renderPersonal();renderNotebook();updateFreshness();
+  if(state.activeTab==='today')renderToday();
   renderIds();
   renderAllot();
-  renderCorp();
-  renderMarket();
-  renderCalendar();
+  if(state.activeTab==='gmp')renderGmp();
+  if(state.activeTab==='corp')renderCorp();
+  if(state.activeTab==='market')renderMarket();
+  if(state.activeTab==='cal')renderCalendar();
 }
 
-const TABS = ['today','ipos','gmp','allot','corp','market','cal'];
+const TABS = ['performance','home','more','today','ipos','gmp','allot','corp','market','cal'];
 function showTab(name){
-  // IPOs is the landing view: the list is what the app is for, and Today is a
-  // question asked of it rather than the default way in.
-  if (!TABS.includes(name)) name = 'ipos';
+  if(name==='ipos')name='home';
+  if(name==='ai')name='today';
+  // Discover is the landing view; Today holds the restored AI comparison tools.
+  if (!TABS.includes(name)) name = 'home';
+  if(state.activeTab!==name)window.scrollTo({top:0,left:0,behavior:'instant'});
+  state.activeTab=name;
   $$('.tabs button').forEach((x) => x.classList.toggle('on', x.dataset.tab === name));
   TABS.forEach((id) => { $('#tab-'+id).hidden = (id !== name); });
   // Today and My Applications answer a fixed question; the filter row would
   // only let you hide the very thing each is for.
-  $('#filter-row').hidden = (name === 'allot' || name === 'today' || name === 'corp' || name === 'market' || name === 'cal');
+  $('#filter-row').hidden = !['ipos','gmp'].includes(name);
+  $$('.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===name?'page':'false'));
+  document.documentElement.dataset.view=name;
   // Charts size to their container, so re-draw once the tab is actually visible.
+  if (name === 'performance')renderPerformance();
+  if (name === 'today')renderToday();
+  if (name === 'corp')renderCorp();
+  if (name === 'market')renderMarket();
   if (name === 'gmp') renderGmp();
   if (name === 'cal') renderCalendar();
 }
@@ -2970,7 +3074,7 @@ function routeFromHash(){
     return;
   }
   const open = $('.modal-backdrop');
-  if (open) open.remove(), (document.body.style.overflow = '');
+  if (open) open._dispose();
   showTab(hash);
 }
 
@@ -3084,20 +3188,9 @@ $('#gmp-sort-dir').addEventListener('click', () => {
   renderGmp();
 });
 
-$('#refresh').addEventListener('click', refresh);
+$('#refresh').addEventListener('click', ()=>refresh({force:true}));
 
-$('#auto').addEventListener('click', (e) => {
-  if (state.autoTimer){
-    clearInterval(state.autoTimer);
-    state.autoTimer = null;
-    e.target.textContent = 'Auto: off';
-    e.target.classList.remove('on');
-  } else {
-    state.autoTimer = setInterval(refresh, 5*60*1000);
-    e.target.textContent = 'Auto: 5 min';
-    e.target.classList.add('on');
-  }
-});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){updateFreshness();showBanner();}});
 
 $('#theme').addEventListener('click', () => {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
@@ -3113,6 +3206,7 @@ $('#pan-add').addEventListener('click', () => {
   if (!value){ toast('Enter a PAN or DP ID'); return; }
   const ids = getIds();
   if (ids.some((x) => x.value === value)){ toast('Already saved'); return; }
+  if(!/^[A-Z0-9]{8,25}$/.test(value)){toast('Enter a valid PAN or DP/client ID');return;}
   ids.push({ label, value });
   setIds(ids);
   $('#pan-value').value = '';
@@ -3152,10 +3246,9 @@ $('#tab-today').addEventListener('click', async (e) => {
   if (copy){
     const rows = todayRows(copy.dataset.copy);
     if (!rows.length) return;
-    try {
-      await navigator.clipboard.writeText(aiPrompt(rows));
+    if(await copyText(aiPrompt(rows))){
       toast('Details copied — paste into any AI chat');
-    } catch {
+    } else {
       toast('Could not copy — the browser blocked clipboard access');
     }
     return;
@@ -3244,6 +3337,7 @@ document.addEventListener('click', async (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
+  if(e.target.closest('button,a,select,input'))return;
   const card = e.target.closest('.card[data-open]');
   if (card) location.hash = 'ipo=' + encodeURIComponent(card.dataset.open);
 });
@@ -3265,19 +3359,27 @@ document.documentElement.dataset.theme = theme;
 $('#theme').textContent = theme === 'light' ? '☾' : '☀';
 
 $('#today').textContent = new Date().toLocaleDateString('en-IN',
-  { weekday:'short', day:'numeric', month:'short' });
+  { timeZone:'Asia/Kolkata',weekday:'short', day:'numeric', month:'short' });
 
-state.history = load(LS.history, {});
+state.history = {}; // Ignore old client-stamped observations.
+state.decisions=load(LS.decisions,{});state.watch=load(LS.watch,[]);state.compare=load(LS.compare,[]).slice(0,3);state.applications=load(LS.applications,{});
+$('#remember-ids').checked=load(LS.remember,sessionIds.length>0);
 state.filters = { ...state.filters, ...load(LS.filters, {}) };
 state.range = load(LS.range, state.range);
 syncFilterUI();
 
 const snap = load(LS.snapshot, null);
-if (snap){ state.ipos = snap.ipos || []; state.gmp = snap.gmp || []; }
+if (snap){
+  state.ipos=snap.ipos||[];state.gmp=snap.gmp||[];state.sourceTimes=snap.sourceTimes||{};
+  for(const key of ['history','fundamentals','corporate','market','reports','sourceErrors'])state[key]=snap[key]||{};
+  state.loaded=!!(state.ipos.length||state.gmp.length);state.fromSaved=true;
+}
 
 showTab(location.hash.startsWith('#ipo=') ? 'ipos' : location.hash.slice(1));
 render();
-refresh().then(routeFromHash);
+showBanner();
+if(!state.loaded||snap?.version!==2||load(LS.refreshDay,null)!==todayISO())refresh({force:true}).then(routeFromHash);
+else routeFromHash();
 
 // Charts are sized from their container width, so re-draw on resize.
 let resizeTimer;

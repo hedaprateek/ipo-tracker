@@ -37,11 +37,14 @@
       <thead><tr><th>Stored as</th><th>What it holds</th></tr></thead>
       <tbody>
         <tr><td class="name"><code>ipotracker.ids</code></td>
-            <td>The PANs or DP/Client IDs you add, with the labels you give them.</td></tr>
+            <td>Your PANs or DP/Client IDs only when Remember IDs is enabled. Otherwise they remain in memory for this page session.</td></tr>
+        <tr><td class="name"><code>ipotracker.watch</code>, <code>ipotracker.compare</code>, <code>ipotracker.applications</code>, <code>ipotracker.decisions</code></td>
+            <td>Saved IPOs, comparison selections, manually entered application amounts/statuses, and your own research decisions and notes. No PAN is attached to these entries. These notes are not sent to an AI service.</td></tr>
+        <tr><td class="name"><code>ipotracker.remember</code></td><td>Whether you chose to remember IDs on this browser. Existing saved IDs remain available until you delete them or disable Remember.</td></tr>
         <tr><td class="name"><code>ipotracker.registrars</code></td>
             <td>Which registrar you last picked for each issue.</td></tr>
         <tr><td class="name"><code>ipotracker.history</code>, <code>ipotracker.snapshot</code></td>
-            <td>A local copy of grey market premium readings, so a chart still draws when a source is down.</td></tr>
+            <td>Last-loaded public figures and their source timestamps. Earlier client-generated history is no longer used to create observations.</td></tr>
         <tr><td class="name"><code>ipotracker.filters</code>, <code>ipotracker.range</code>, <code>ipotracker.theme</code></td>
             <td>Your filter, time range and light/dark choices.</td></tr>
         <tr><td class="name"><code>ipotracker.budget</code>, <code>ipotracker.aitarget</code></td>
@@ -59,6 +62,7 @@
   </p>
 
   <h2>To erase it</h2>
+  <p>IDs are masked by default; masking is not encryption. Use Delete all IDs or switch off Remember IDs to remove the stored copy. Full IDs are shown only after you select Show full IDs.</p>
   <p>
     Remove individual IDs with the × beside them on <b>My Applications</b>. To remove
     everything, clear site data for this domain in your browser settings. Nothing
@@ -108,7 +112,7 @@
     an issue there.
   </p>
 
-  <p class="page-updated">Last updated 18 September 2026.</p>
+  <p class="page-updated">Last updated 23 October 2026.</p>
 </main>
 
 <footer class="site-footer">

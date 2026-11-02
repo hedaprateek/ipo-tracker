@@ -1,5 +1,87 @@
 # IPO Tracker
 
+## Research-first redesign — 23 October 2026
+
+**Discover** is the single company-research feed. Closing/open/upcoming/saved
+shortcuts and board filters narrow that feed; saved companies are not repeated
+in a second list. Older IPOs/Today bookmarks resolve to Discover. **After listing**
+is a primary view showing issue price, listing open, listing-day close when opening
+data is missing, the latest recorded quote, dated returns and the value of an
+original minimum application where its lot details are known.
+
+Each **Understand this IPO** brief leads with a sourced company profile, then
+market sentiment, deterministic financial observations and questions to investigate.
+Only consecutive full financial years are compared; interim profit/loss is labelled
+separately. P/E is labelled as reported or calculated from cap price/reported EPS,
+with a warning about periods and dilution. Data coverage is not an investment score.
+Missing profiles or figures remain explicit gaps. Detailed tables/charts and older
+AI reports are folded under the brief. No model key is needed for these features.
+
+The scenario slider illustrates an upside/downside move on the minimum application;
+it is not a forecast, does not assume allotment and excludes charges/taxes. Users
+can save their own Shortlist / Research more / Pass decision and private notes in
+the Applications notebook. Those choices are not automated buy/avoid advice.
+
+The price parser now matches the exact listing date and distinguishes opening
+price from daily close. It stores the source's quote timestamp separately from fetch
+time and includes a bounded closing-price history. An older close is never relabelled
+as a listing open. Known split events suppress unadjusted return calculations.
+Unavailable quotes and lots are displayed as missing, not estimated. Issue terms
+and last-known quote timestamps are retained across partial refresh failures.
+The stock screen and corporate-offer routes remain compatible with old bookmarks
+but are no longer promoted as part of the core IPO workflow.
+
+## October 2026 update
+
+The opening **Home** dashboard shows closing/open/upcoming issues, company search,
+saved IPOs, next dates and a comparison of up to three issues. **More** contains
+application-cost comparisons, GMP, calendar, corporate offers and the stock screen.
+Application tracking is manual and local to the browser: record mandate approval,
+allotment, refund/unblock and listing stages without attaching PANs.
+
+Use `start.cmd` for a local preview with live source fetching. It opens a browser,
+binds only to loopback, and chooses a free port if 8787 is busy. The first visit each
+day (India time) refreshes data; subsequent visits restore the complete saved snapshot.
+There is no timer or refresh on tab focus. Use Refresh whenever newer figures are needed;
+listed-price requests are reused for five minutes. The AI tools tab restores the scoped
+retail/other-category comparison, budget, Copy details and external AI choices.
+The refresh button also updates an open detail panel without losing reading position,
+expanded figures, scenario or note selection. Details use one vertical scroll area.
+Successful source responses are saved locally; failures retain the last good data
+and timestamp and display a failed-source warning. Cache reads never advance timestamps
+or create history observations. Use `node server.js --static` explicitly for a saved-data
+preview. GitHub Pages reads published snapshots from the scheduled workflow, not this
+local proxy. Local preview does not publish changes.
+
+Source freshness is independent for IPO bids, GMP and market prices. IPO/GMP reads
+older than two hours are marked stale; stale or unavailable GMP is excluded from
+current calculations and AI inputs. This is a fetch timestamp, not a guarantee
+that an upstream quote changed. The parser supports six/eight-column source tables
+and rejects headers. Refreshes no longer stamp old static quotes as new history.
+Older unverified history is retained as an archive but excluded from the accuracy
+scorecard. Each scheduled fetch records source status in `data/source-health.json`;
+a post-commit health check flags a stale feed even if the other source succeeded.
+
+Whole-lot entry calculations distinguish mainboard and SME rules. Subscription is
+shown as demand rather than a precise allotment probability. Ambiguous short-name
+matches are not merged. Calendar dates are expected milestones unless confirmed by
+the registrar. Calendar downloads are standard `.ics` files with expected-date notes.
+
+IDs are masked by default and remembered only when opted in; pre-existing saved
+IDs remain available until removed or persistence is disabled. Browser storage is
+not encrypted. Watchlists, comparison selections and manual applications remain
+local. Archived AI reports have their age/input limitations shown prominently;
+the generator excludes stale GMP, records input health and never requires a model
+API call to run the site or tests.
+
+Checks: `npm test`, `npm run smoke`, `npm run build`. Browser checks use an ephemeral
+port, isolated profile and 90-second deadline. CI runs them on code changes; source
+health checks run with the scheduled fetch. `.cache/` contains ignored local test
+artifacts and is excluded from deployment.
+
+The historical feature descriptions below describe the original interface; the
+freshness, category and privacy behaviour above supersedes those descriptions.
+
 Open, upcoming and recently closed IPOs (mainboard + SME), category-wise
 subscription, live GMP with a trend that builds itself and a record of how often
 that premium was actually right, and a place to keep your PANs for allotment

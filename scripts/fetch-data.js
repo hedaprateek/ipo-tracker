@@ -23,6 +23,12 @@ const sources = require('../lib/sources');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const now = new Date().toISOString();
+const health=readJson('source-health.json',{sources:{}});health.checkedAt=now;
+function recordHealth(key,result,file){const previous=readJson(file,{});
+  health.sources[key]={lastAttempt:now,lastSuccess:result.status==='fulfilled'&&result.value?.length?now:previous.fetchedAt||null,
+    status:result.status==='fulfilled'&&result.value?.length?'ok':'failed',error:result.status==='rejected'?String(result.reason?.message||'Source failed').slice(0,300):null};
+  writeJson('source-health.json',health);
+}
 
 function readJson(file, fallback) {
   try {
@@ -39,11 +45,12 @@ function writeJson(file, value) {
 
 (async () => {
   const [iposRes, gmpRes] = await Promise.allSettled([
-    sources.getIposEnriched(),
+    sources.getIposEnriched(readJson('ipos.json',{ipos:[]}).ipos),
     sources.getGmp(),
   ]);
 
   let ok = 0;
+  recordHealth('ipos',iposRes,'ipos.json');recordHealth('gmp',gmpRes,'gmp.json');
 
   if (iposRes.status === 'fulfilled' && iposRes.value.length) {
     // Categories, issue terms and listing prices are all attached by
