@@ -1,12 +1,12 @@
 {
  "ok": true,
- "updatedAt": "2026-11-12T19:38:39.943Z",
+ "updatedAt": "2026-11-13T00:55:42.804Z",
  "inputHealth": {
   "ipos": "current",
   "gmp": "stale"
  },
  "inputTimes": {
-  "ipos": "2026-11-12T19:38:37.595Z",
+  "ipos": "2026-11-13T00:55:40.420Z",
   "gmp": "2026-11-06T11:52:42.007Z"
  },
  "provider": null,
