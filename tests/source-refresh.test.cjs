@@ -95,3 +95,24 @@ test('workflow health gate still fails after a failed refresh even if the saved 
     assert.equal(process.exitCode, outcome==='failure'?1:undefined);
   }
 });
+
+test('health gate permits a partial publication with a warning and fails when both feeds are stale', () => {
+  const script=fs.readFileSync(require.resolve('../scripts/check-health.js'),'utf8');
+  for (const staleFeeds of [1,2]) {
+    const process={env:{IPO_FETCH_OUTCOME:'success'}},warnings=[],summaries=[];
+    let reads=0;
+    vm.runInNewContext(script, {
+      process, __dirname:require('node:path').resolve(__dirname,'../scripts'),
+      console:{log(line){summaries.push(line)},error(line){warnings.push(line)}},
+      require(name) {
+        if(name==='fs')return {readFileSync:()=>JSON.stringify({fetchedAt:reads++<staleFeeds?'2020-01-01T00:00:00Z':new Date().toISOString()})};
+        if(name==='../js/core')return require('../js/core');
+        return require(name);
+      },
+    });
+    assert.equal(warnings.length,staleFeeds);
+    assert.ok(warnings.every(line=>line.startsWith('::warning::')));
+    assert.equal(process.exitCode,staleFeeds===2?1:undefined);
+    if(staleFeeds===1)assert.match(summaries.join('\n'),/Partial refresh/);
+  }
+});

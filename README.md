@@ -60,7 +60,10 @@ that an upstream quote changed. The parser supports six/eight-column source tabl
 and rejects headers. Refreshes no longer stamp old static quotes as new history.
 Older unverified history is retained as an archive but excluded from the accuracy
 scorecard. Each scheduled fetch records source status in `data/source-health.json`;
-a post-commit health check flags a stale feed even if the other source succeeded.
+a post-commit health check warns about a stale feed even if the other source
+succeeded. A partial refresh can publish successfully; the workflow fails when
+neither feed is current or the fetch script fails, and the app continues to flag
+each unavailable source independently.
 The GMP refresh reads IPO Watch's public JSON feed used by its redesigned site,
 with the legacy HTML tables as a fallback. Concurrent NSE requests share their
 cookie bootstrap and retry once with a renewed session after a failure. Even

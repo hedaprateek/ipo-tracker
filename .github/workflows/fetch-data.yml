@@ -72,7 +72,7 @@ jobs:
           # The schedule can overlap a manual push; rebase rather than fail.
           git pull --rebase --autostash origin main
           git push
-      - name: Check each source after preserving partial updates
+      - name: Check source health after publishing updates
         env:
           IPO_FETCH_OUTCOME: ${{ steps.fetch.outcome }}
         run: node scripts/check-health.js
