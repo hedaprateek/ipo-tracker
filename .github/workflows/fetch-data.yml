@@ -26,6 +26,7 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -38,12 +39,17 @@ jobs:
         run: npm ci --omit=dev --no-audit --no-fund
 
       - name: Fetch NSE and GMP data
+        id: fetch
         run: node scripts/fetch-data.js
+        # The script preserves saved data and writes source-health.json even
+        # when both feeds fail. Publish that status before reporting failure.
+        continue-on-error: true
 
       # Only regenerates a report when an IPO's facts have materially changed,
       # so most runs make no API calls at all. Never fails the workflow: without
       # a key the script exits 0 and the rest of the data still publishes.
       - name: Generate apply/avoid reports
+        if: steps.fetch.outcome == 'success'
         env:
           # Whichever is set wins, Gemini first — it has a free tier.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -67,4 +73,6 @@ jobs:
           git pull --rebase --autostash origin main
           git push
       - name: Check each source after preserving partial updates
+        env:
+          IPO_FETCH_OUTCOME: ${{ steps.fetch.outcome }}
         run: node scripts/check-health.js

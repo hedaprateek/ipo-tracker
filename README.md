@@ -61,6 +61,11 @@ and rejects headers. Refreshes no longer stamp old static quotes as new history.
 Older unverified history is retained as an archive but excluded from the accuracy
 scorecard. Each scheduled fetch records source status in `data/source-health.json`;
 a post-commit health check flags a stale feed even if the other source succeeded.
+The GMP refresh reads IPO Watch's public JSON feed used by its redesigned site,
+with the legacy HTML tables as a fallback. Concurrent NSE requests share their
+cookie bootstrap and retry once with a renewed session after a failure. Even
+when both sources fail, the workflow publishes source health before reporting
+the failure, while retaining saved prices and their original timestamps.
 
 Whole-lot entry calculations distinguish mainboard and SME rules. Subscription is
 shown as demand rather than a precise allotment probability. Ambiguous short-name

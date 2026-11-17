@@ -6,4 +6,8 @@ for(const [key,file] of [['IPO bids','ipos.json'],['GMP','gmp.json']]){
   if(status!=='current'){console.error(`::warning::${key} data is ${status}; partial data has been preserved`);failed=true;}
 }
 console.log(lines.join('\n'));if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join('\n')+'\n');
+if(process.env.IPO_FETCH_OUTCOME==='failure'){
+  console.error('::error::Source refresh failed; saved data and source health have been preserved');
+  failed=true;
+}
 if(failed)process.exitCode=1;
