@@ -24,9 +24,18 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
   const profile=path.join(out,'profile-'+Date.now());
   const executable=process.env.CHROME_PATH||(process.platform==='win32'?'C:/Program Files/Google/Chrome/Application/chrome.exe':'google-chrome');
-  chrome=spawn(executable,['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:'ignore',windowsHide:true});
-  let pages;for(let i=0;i<60;i++){try{const port=fs.readFileSync(path.join(profile,'DevToolsActivePort'),'utf8').split('\n')[0];pages=await(await fetch('http://127.0.0.1:'+port+'/json')).json();break;}catch{}await sleep(100);}
-  assert.ok(pages,'Chrome started');socket=new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);
+  let chromeLog='',launchError;
+  chrome=spawn(executable,['--headless=new','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:['ignore','ignore','pipe'],windowsHide:true});
+  chrome.stderr.on('data',chunk=>{chromeLog=(chromeLog+chunk).slice(-4000);});
+  chrome.on('error',error=>{launchError=error;});
+  // A busy hosted runner can take longer than six seconds to start Chrome.
+  // Keep this inside the existing 90-second watchdog and report launch errors.
+  let pages;for(let i=0;i<200;i++){
+    if(launchError)throw launchError;
+    if(chrome.exitCode!==null)throw Error('Chrome exited before startup: '+chromeLog);
+    try{const port=fs.readFileSync(path.join(profile,'DevToolsActivePort'),'utf8').split('\n')[0];pages=await(await fetch('http://127.0.0.1:'+port+'/json',{signal:AbortSignal.timeout(1000)})).json();if(pages.some(p=>p.type==='page'))break;}catch{}await sleep(100);
+  }
+  assert.ok(pages?.some(p=>p.type==='page'),'Chrome started within 20 seconds: '+chromeLog);socket=new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);
   await new Promise(r=>socket.addEventListener('open',r,{once:true}));let sequence=0;const pending=new Map(),errors=[];
   socket.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const task=pending.get(m.id);if(!task)return;clearTimeout(task.timer);pending.delete(m.id);m.error?task.reject(m.error):task.resolve(m.result);}
     else if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text);};
