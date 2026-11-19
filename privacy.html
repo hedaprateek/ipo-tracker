@@ -53,6 +53,12 @@
     </table>
   </div>
   <p>
+    The browser also caches a complete copy of the page, styles and scripts so a
+    repeat visit can open without a connection. This offline cache contains no
+    PANs, notes or other personal entries. Public market snapshots retain their
+    original source dates in local storage.
+  </p>
+  <p>
     <b>Your PAN is the sensitive one, so to be explicit about it:</b> it is stored only
     to save you retyping it, it is copied to your clipboard when you press a check
     button, and it is never included in anything sent off the device — not in the
@@ -80,14 +86,14 @@
     <li>
       <b>Market data.</b> The figures are fetched as plain files from this same site.
       They are refreshed by a scheduled job that runs away from your browser, so
-      normal use makes no request to NSE, IPO Watch or anyone else.
+      normal use makes no request to NSE or IPO Watch.
     </li>
     <li>
-      <b>The fallback path.</b> If those files cannot be reached, the app can fall back
-      to fetching from the sources through a public relay
-      (<code>allorigins.win</code>, <code>codetabs.com</code> or <code>corsproxy.io</code>).
-      Those relays see that request. It contains no personal data, but you should
-      know it happens.
+      <b>The fallback path.</b> On the GitHub Pages site, if market files are
+      unavailable or stale, the app can read the same public snapshots from this
+      project's repository at <code>raw.githubusercontent.com</code>. GitHub sees
+      the file request, including your IP address and browser. The request
+      contains no personal entries. The app does not use public CORS relays.
     </li>
     <li>
       <b>Ask AI.</b> Pressing an “Ask AI” button opens Google, ChatGPT or Claude with a
@@ -112,7 +118,7 @@
     an issue there.
   </p>
 
-  <p class="page-updated">Last updated 23 October 2026.</p>
+  <p class="page-updated">Last updated 20 November 2026.</p>
 </main>
 
 <footer class="site-footer">

@@ -443,9 +443,25 @@
   </nav>
 </footer>
 
-<script src="js/core.js?v=dfb448541fce"></script>
+<div id="startup-recovery" role="status" hidden style="margin:24px auto;padding:20px;max-width:640px;font:16px/1.6 system-ui;background:#fff;color:#172033;border:1px solid #ccd2dc;border-radius:12px">
+  <b>IPO Tracker could not finish loading.</b>
+  <p>Check your connection and reload. Your saved companies and notes stay on this device.</p>
+  <a id="startup-retry" href="./">Reload IPO Tracker</a>
+</div>
+<noscript><p style="padding:20px;font:16px system-ui">Enable JavaScript to open IPO Tracker.</p></noscript>
+<script>
+(function(){
+  var ready=false,panel=document.getElementById('startup-recovery');
+  document.getElementById('startup-retry').href='./?reload='+Date.now();
+  function failed(){if(!ready){panel.hidden=false;document.body.classList.remove('busy','first-load');}}
+  var timer=setTimeout(failed,12000);
+  window.addEventListener('error',function(event){if(!ready&&(event.target.tagName==='SCRIPT'||event.error))failed();},true);
+  window.addEventListener('ipo:ready',function(){ready=true;clearTimeout(timer);panel.hidden=true;});
+})();
+</script>
+<script src="js/core.js?v=eb31593bc0b4"></script>
 <script src="js/charts.js?v=236859d4d8f5"></script>
-<script src="js/app.js?v=a7ebc56d0507"></script>
+<script src="js/app.js?v=e9963b3eea1e"></script>
 
 <div class="stunity-credit" id="stunityCredit"><span class="sc-dot"></span><span>Stunity Tech — by <b>Prateek</b></span></div>
 </body>

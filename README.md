@@ -1,5 +1,29 @@
 # IPO Tracker
 
+## Browser recovery — 20 November 2026
+
+Invalid saved settings are ignored in memory without clearing watchlists or notes.
+Requests use a bounded AbortController timeout compatible with older browsers;
+temporary core-download errors retry once. Older published responses cannot
+replace newer saved observations. On the public GitHub Pages site, unavailable
+or stale core JSON can be recovered from this same repository's raw GitHub files,
+with the same schema and timestamp checks. No public proxy is used.
+
+After a successful visit, a scoped service worker saves a complete, integrity
+checked release of the page, styles and scripts. A normal offline revisit can
+open that release and the device's saved data. JSON, PANs and notes are never
+stored in the worker cache. Existing tabs retain their worker until closed;
+subsequent visits install updated releases. A failed script load also shows a
+reload link instead of leaving an unexplained loading screen. First visits still
+need a working connection, and a browser hard reload deliberately bypasses its
+offline worker.
+
+The public monitor verifies script/style content hashes and the worker as well
+as source freshness. Scheduled/manual checks request one recovery refresh if
+either core snapshot is older than two hours. Deployment-triggered checks do not
+dispatch refreshes, preventing a loop during a provider outage. Critically stale
+data still fails monitoring even when recovery has been requested.
+
 ## Stability safeguards — 20 November 2026
 
 The browser reads published snapshots or the local server. It does not switch to

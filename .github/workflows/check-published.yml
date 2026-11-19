@@ -9,6 +9,7 @@ on:
     - cron: '23 * * * *'
 permissions:
   contents: read
+  actions: write
 concurrency:
   group: check-published
   cancel-in-progress: false
@@ -23,6 +24,23 @@ jobs:
         with:
           node-version: '22'
       - name: Verify public assets, data schema and source freshness
+        id: public
+        continue-on-error: true
         env:
           IPO_SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: node scripts/check-published.cjs
+      - name: Request recovery when scheduled updates have gone stale
+        if: steps.public.outputs.refresh_needed == 'true' && github.event_name != 'workflow_run'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Never dispatch from a deployment-triggered check: a provider
+            // outage must not create a refresh/deploy/refresh loop.
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner, repo: context.repo.repo,
+              workflow_id: 'fetch-data.yml', ref: 'main'
+            });
+            core.notice('Requested a source refresh because published data is stale.');
+      - name: Report failed public verification
+        if: steps.public.outcome == 'failure'
+        run: exit 1

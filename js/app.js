@@ -53,7 +53,7 @@ const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
 
 const load = (k, d) => {
-  try { const v = JSON.parse(localStorage.getItem(k)); return v === null ? d : v; }
+  try { return Core.storedValue(k,JSON.parse(localStorage.getItem(k)),d); }
   catch { return d; }
 };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
@@ -123,10 +123,28 @@ function toast(msg){
 
 // ---------------------------------------------------------------- fetching
 
-const json = (u,timeout=12000) => fetch(u, { cache:'no-store', signal:AbortSignal.timeout(timeout) }).then((r) => {
-  if (!r.ok) throw new Error(String(r.status));
-  return r.json();
-});
+const json = (u,timeout=12000,attempts=1) => Core.requestJson(u,{timeout,attempts});
+
+async function publishedSnapshot(key){
+  let snapshot,error;
+  try{snapshot=await json('data/'+key+'.json',6000,2);
+    if(!Core.validSnapshot(key,snapshot))throw Error('Invalid '+key+' snapshot');
+  }catch(e){error=e;snapshot=null;}
+  // The repository is the same publisher's second delivery path. It can also
+  // recover a data commit that has not reached Pages yet. Never use public proxies.
+  if((!snapshot||Core.freshness(snapshot.fetchedAt)!=='current'||Date.parse(snapshot.fetchedAt)<Date.parse(state.sourceTimes[key]))&&location.hostname==='hedaprateek.github.io'){
+    try{const backup=await json('https://raw.githubusercontent.com/hedaprateek/ipo-tracker/main/data/'+key+'.json',6000);
+      if(Core.validSnapshot(key,backup)&&(!snapshot||Date.parse(backup.fetchedAt)>Date.parse(snapshot.fetchedAt)))snapshot=backup;
+    }catch{}
+  }
+  if(!snapshot)throw error||Error('Snapshot unavailable');
+  return snapshot;
+}
+
+function acceptsSnapshot(key,result){
+  return result.status==='fulfilled'&&Core.validSnapshot(key,result.value)&&
+    (!state[key].length||!Number.isFinite(Date.parse(state.sourceTimes[key]))||Date.parse(result.value.fetchedAt)>=Date.parse(state.sourceTimes[key]));
+}
 
 async function detectMode(){
   if (state.mode) return state.mode;
@@ -134,8 +152,7 @@ async function detectMode(){
   // must not switch visitors to unrelated CORS proxies or obsolete parsers.
   if(!['localhost','127.0.0.1','[::1]'].includes(location.hostname))return (state.mode='static');
   try {
-    const res = await fetch('api/health', { cache:'no-store',signal:AbortSignal.timeout(2000) });
-    if (res.ok && (await res.json()).ok === true) return (state.mode = 'server');
+    if ((await json('api/health',2000)).ok === true) return (state.mode = 'server');
   } catch {}
   return (state.mode='static');
 }
@@ -189,11 +206,11 @@ async function refreshData(force){
     ipoJob = json('api/ipos'+(force?'?refresh=1':''),75000);
     gmpJob = json('api/gmp'+(force?'?refresh=1':''),75000);
   } else {
-    ipoJob = json('data/ipos.json');
+    ipoJob = publishedSnapshot('ipos');
     gmpJob = Promise.all([
-      json('data/gmp.json'),
+      publishedSnapshot('gmp'),
       json('data/gmp-history.json',4000).catch(() => null),
-    ]).then(([g, history]) => ({ gmp: g.gmp, history, fetchedAt: g.fetchedAt }));
+    ]).then(([g, history]) => ({...g,history}));
   }
 
   // Reports and fundamentals are optional everywhere — absence is not an error.
@@ -206,7 +223,7 @@ async function refreshData(force){
   const [ipoRes, gmpRes, repRes, fundRes, corpRes, marketRes,healthRes] =
     await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob, corpJob, marketJob,healthJob]);
 
-  if (ipoRes.status === 'fulfilled' && Core.validSnapshot('ipos',ipoRes.value)){
+  if (acceptsSnapshot('ipos',ipoRes)){
     state.ipos = ipoRes.value.ipos;state.sourceTimes.ipos=ipoRes.value.fetchedAt;state.sourceErrors.ipos=ipoRes.value.sourceError||false;
     const current=state.ipos.find(row=>!row.archived);
     state.sourceProviders.ipos=ipoRes.value.provider||current?.source||'nse';
@@ -219,7 +236,7 @@ async function refreshData(force){
     $('#src-ipo').classList.add('err');
   }
 
-  if (gmpRes.status === 'fulfilled' && Core.validSnapshot('gmp',gmpRes.value)){
+  if (acceptsSnapshot('gmp',gmpRes)){
     state.gmp = gmpRes.value.gmp.filter(g=>g.key&&nameKey(g.name)!=='company');
     state.sourceTimes.gmp=gmpRes.value.fetchedAt;state.sourceErrors.gmp=gmpRes.value.sourceError||false;
     if (Core.isRecord(gmpRes.value.history)) state.history = gmpRes.value.history;
@@ -260,6 +277,7 @@ async function refreshData(force){
   state.loadFailed=!state.ipos.length&&!state.gmp.length;
   showBanner(mode, ipoRes, gmpRes);
   render();
+  window.dispatchEvent(new Event('ipo:ready'));
   refreshOpenDetail();
 
   btn.disabled = false;
@@ -2986,7 +3004,7 @@ function showTab(name){
 function routeFromHash(){
   const hash = location.hash.slice(1);
   if (hash.startsWith('ipo=')){
-    const key = decodeURIComponent(hash.slice(4));
+    let key;try{key=decodeURIComponent(hash.slice(4));}catch{showTab('home');return;}
     if (!$('.modal-backdrop')) openModal(key);
     return;
   }
@@ -3297,9 +3315,14 @@ if (snap){
 
 showTab(location.hash.startsWith('#ipo=') ? 'ipos' : location.hash.slice(1));
 render();
+window.dispatchEvent(new Event('ipo:ready'));
 showBanner();
 if(!savedIposValid||!savedGmpValid||Core.needsSnapshotRefresh(snap,load(LS.refreshDay,null)))refresh({force:true}).then(routeFromHash);
 else routeFromHash();
+
+if('serviceWorker' in navigator&&window.isSecureContext){
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(()=>{});
+}
 
 // Charts are sized from their container width, so re-draw on resize.
 let resizeTimer;

@@ -1,8 +1,9 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'.cache','browser-check');fs.mkdirSync(out,{recursive:true});
-let stale=false,live=false,apiVersion=10,forceRequests=0,dataRequests=0,sourceFailed=false,outage=false,optionalFailed=false,invalidCore=false,chrome,socket;
+let stale=false,live=false,apiVersion=10,forceRequests=0,dataRequests=0,sourceFailed=false,outage=false,optionalFailed=false,invalidCore=false,assetFailed=false,chrome,socket;
 const server=http.createServer((req,res)=>{
   const request=new URL(req.url,'http://localhost');let pathname=request.pathname;
+  if(assetFailed&&pathname==='/js/app.js'){res.writeHead(503).end('Temporary asset outage');return;}
   if(pathname.startsWith('/data/')||['/api/ipos','/api/gmp'].includes(pathname))dataRequests++;
   if(live&&pathname==='/api/health'){res.setHeader('Content-Type','application/json');res.end('{"ok":true}');return;}
   if(live&&['/api/ipos','/api/gmp'].includes(pathname)){
@@ -141,7 +142,12 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   assert.deepEqual(await evaluate(`JSON.parse(localStorage.getItem('ipotracker.snapshot')).ipos`),afterOptional.ipos,'Malformed payload cannot replace saved data');
   invalidCore=false;optionalFailed=false;await evaluate(`document.querySelector('#refresh').click()`);
   await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('[data-source="ipos"]')?.textContent.includes('current')`);
-  stale=true;await evaluate(`localStorage.setItem('ipotracker.refreshDay',JSON.stringify('2000-01-01'))`);await send('Page.reload',{ignoreCache:true});await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#data-health')?.textContent.includes('stale')`);
+  const beforeOlder=await evaluate(`JSON.parse(localStorage.getItem('ipotracker.snapshot'))`);
+  stale=true;await evaluate(`document.querySelector('#refresh').click()`);
+  await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('[data-source="gmp"]')?.textContent.includes('failed')`);
+  assert.deepEqual(await evaluate(`JSON.parse(localStorage.getItem('ipotracker.snapshot')).sourceTimes.gmp`),beforeOlder.sourceTimes.gmp,'Older publication cannot overwrite a newer saved observation');
+  await evaluate(`const older=JSON.parse(localStorage.getItem('ipotracker.snapshot'));older.sourceTimes.gmp='2020-01-01T00:00:00Z';localStorage.setItem('ipotracker.snapshot',JSON.stringify(older));localStorage.setItem('ipotracker.refreshDay',JSON.stringify('2000-01-01'));`);
+  await send('Page.reload',{ignoreCache:true});await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#data-health')?.textContent.includes('stale')`);
   assert.ok(dataRequests>requestsBeforeReload,'First visit on a different day fetches new data');
   assert.ok(await evaluate(`document.querySelector('#offline-banner').textContent.includes('GMP')`),'Stale GMP warning');
   assert.equal(await evaluate(`document.querySelector('#offline-banner').hidden`),false);
@@ -178,9 +184,35 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   await until(`!document.querySelector('#refresh').disabled&&document.querySelector('[data-source="gmp"]').textContent.includes('failed')`);
   assert.ok(await evaluate(`!document.querySelector('#offline-banner').hidden`),'Fallback source errors are visible');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape'});await until(`!document.querySelector('.modal-backdrop')`);
+  live=false;sourceFailed=false;
+  await evaluate(`location.hash='home';localStorage.setItem('ipotracker.compare','{}');localStorage.setItem('ipotracker.ids','{}');localStorage.setItem('ipotracker.applications',JSON.stringify({broken:null}));const notes=JSON.parse(localStorage.getItem('ipotracker.decisions'));notes.broken=null;localStorage.setItem('ipotracker.decisions',JSON.stringify(notes));localStorage.removeItem('ipotracker.refreshDay');`);
+  // Simulate Safari versions without the newer static timeout helper.
+  const compatibility=await send('Page.addScriptToEvaluateOnNewDocument',{source:'AbortSignal.timeout=undefined;'});
+  await send('Page.reload',{ignoreCache:true});
+  await until(`document.querySelector('#refresh')?.disabled===false&&!!document.querySelector('#home-results .card')`);
+  assert.ok(await evaluate(`document.querySelector('#startup-recovery').hidden`),'Corrupt settings and missing AbortSignal.timeout do not stop startup');
+  const workerStatus=await evaluate(`navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>({scope:r.scope,active:r.active?.state,waiting:r.waiting?.state,installing:r.installing?.state,secure:isSecureContext})).catch(e=>({error:e.message,secure:isSecureContext}))`);
+  assert.ok(!workerStatus.error,'Offline worker registers: '+JSON.stringify(workerStatus));
+  // A browser hard reload deliberately bypasses service workers. Start a
+  // normal visit before testing the installed worker's offline navigation.
+  await send('Page.reload');
+  await until(`document.querySelector('#refresh')?.disabled===false&&!!document.querySelector('#home-results .card')`);
+  try{await until(`!!navigator.serviceWorker.controller`);}catch(error){throw Error(error.message+'; worker '+JSON.stringify(workerStatus)+'; cache '+JSON.stringify(await evaluate(`caches.keys()`)));}
+  await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+  await send('Page.reload');
+  await until(`document.querySelector('#refresh')?.disabled===false&&!!document.querySelector('#home-results .card')`);
+  assert.ok(await evaluate(`document.querySelector('#startup-recovery').hidden`),'A fully offline revisit opens the cached release and saved IPOs');
+  assert.ok(await evaluate(`document.querySelector('#stunityCredit').textContent.includes('Prateek')`),'Offline release preserves studio credit');
+  await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+  await send('Page.removeScriptToEvaluateOnNewDocument',{identifier:compatibility.identifier});
+  await evaluate(`navigator.serviceWorker.getRegistrations().then(list=>Promise.all(list.map(r=>r.unregister())))`);
+  assetFailed=true;await send('Page.reload',{ignoreCache:true});
+  await until(`document.querySelector('#startup-recovery')?.hidden===false`);
+  assert.ok(await evaluate(`document.querySelector('#startup-retry').href.includes('reload=')`),'Missing app script shows a usable reload link');
+  assetFailed=false;
   outage=true;await evaluate(`location.hash='home';localStorage.removeItem('ipotracker.snapshot');localStorage.removeItem('ipotracker.refreshDay')`);
   await send('Page.reload',{ignoreCache:true});
   await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#home-results')?.textContent.includes('temporarily unavailable')`);
   assert.ok(await evaluate(`Object.values(JSON.parse(localStorage.getItem('ipotracker.decisions'))).some(d=>d.note==='Check cash flow before deciding')`),'Cold-start outage preserves personal notes');
-  assert.deepEqual(errors,[]);console.log('PASS: '+rows.length+' views, saved-data and malformed-response recovery, optional and total outages, cold-start recovery, source labels, mobile/desktop scrolling, detail refresh, notes, watchlist, comparison, applications, masked IDs, calendar download and stale GMP exclusion.');
+  assert.deepEqual(errors,[]);console.log('PASS: '+rows.length+' views, saved-data and malformed-response recovery, older-publication protection, corrupt settings, older-browser support, offline page reload, missing-script recovery, optional and total outages, cold-start recovery, source labels, mobile/desktop scrolling, detail refresh, notes, watchlist, comparison, applications, masked IDs, calendar download and stale GMP exclusion.');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{clearTimeout(watchdog);socket?.close();chrome?.kill();server.close();server.closeAllConnections();});

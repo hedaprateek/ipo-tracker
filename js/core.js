@@ -17,8 +17,37 @@
     const age=now-Date.parse(stamp);return !Number.isFinite(age)||age< -300000?'unknown':age>maxAge?'stale':'current';
   }
   function isRecord(value){return !!value&&typeof value==='object'&&!Array.isArray(value);}
+  // Old releases and interrupted browser writes must not prevent startup.
+  // Ignore only invalid entries; never clear the visitor's stored work.
+  function storedValue(key,value,fallback){
+    if(value==null)return fallback;
+    const kind=key.split('.').at(-1);
+    if(['watch','compare'].includes(kind))return Array.isArray(value)?value.filter(v=>typeof v==='string'):fallback;
+    if(kind==='ids')return Array.isArray(value)?value.filter(v=>isRecord(v)&&typeof v.value==='string'&&(v.label==null||typeof v.label==='string')):fallback;
+    if(['decisions','applications'].includes(kind))return isRecord(value)?Object.fromEntries(Object.entries(value).filter(([,v])=>isRecord(v)&&['name','status','stage','note','updated'].every(k=>v[k]==null||typeof v[k]==='string'))):fallback;
+    if(kind==='filters')return isRecord(value)?Object.fromEntries(Object.entries(value).filter(([k,v])=>['q','board','status','sort'].includes(k)&&typeof v==='string')):fallback;
+    if(Array.isArray(fallback))return Array.isArray(value)?value:fallback;
+    if(isRecord(fallback))return isRecord(value)?value:fallback;
+    return fallback===null||typeof value===typeof fallback?value:fallback;
+  }
+  async function requestJson(url,{timeout=12000,attempts=2,fetchImpl=globalThis.fetch,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
+    for(let attempt=0;attempt<attempts;attempt++){
+      const controller=new AbortController();let timer;
+      try{
+        // Cover headers AND body parsing, including browsers without AbortSignal.timeout.
+        return await Promise.race([
+          (async()=>{const r=await fetchImpl(url,{cache:'no-store',signal:controller.signal});
+            if(!r.ok){const error=Error('HTTP '+r.status);error.status=r.status;throw error;}return r.json();})(),
+          new Promise((_,reject)=>{timer=setTimeout(()=>{reject(Error('Request timed out'));controller.abort();},timeout);}),
+        ]);
+      }catch(error){
+        if(attempt===attempts-1||error instanceof SyntaxError||error.status&&error.status!==429&&error.status<500)throw error;
+      }finally{clearTimeout(timer);}
+      await sleep(250);
+    }
+  }
   function validSnapshot(key,data){
-    if(!isRecord(data)||data.ok===false||!Number.isFinite(Date.parse(data.fetchedAt))||!Array.isArray(data[key])||!data[key].length)return false;
+    if(!isRecord(data)||data.ok===false||freshness(data.fetchedAt)==='unknown'||!Array.isArray(data[key])||!data[key].length)return false;
     return data[key].every(row=>isRecord(row)&&
       (key==='ipos'?typeof row.company==='string'&&!!nameKey(row.company)&&
         (row.categories==null||Array.isArray(row.categories)&&row.categories.every(isRecord))&&(row.info==null||isRecord(row.info))&&
@@ -111,5 +140,5 @@
     questions.push('Read business risks, customer concentration, fresh issue versus offer-for-sale and use of proceeds.');
     return {about:fund.about||null,facts,questions,uses,coverage:groups.filter(Boolean).length,pe,period:last?.period||null};
   }
-  return {nameKey,matchIssue,freshness,isRecord,validSnapshot,marketDate,needsSnapshotRefresh,categories,calendar,performance,research};
+  return {nameKey,matchIssue,freshness,isRecord,storedValue,requestJson,validSnapshot,marketDate,needsSnapshotRefresh,categories,calendar,performance,research};
 });

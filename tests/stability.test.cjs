@@ -50,16 +50,20 @@ test('an interrupted atomic write retains the previous JSON and cleans its tempo
 });
 
 function fixtureLoad(overrides={}){
-  const files={'':'<div id="home-results"></div><div id="stunityCredit"></div>','styles.css':'body{}','js/app.js':'let app=1;','js/core.js':'let core=1;','js/charts.js':'let charts=1;','data/ipos.json':ipos,'data/gmp.json':gmp,'data/source-health.json':{sources:{ipos:{provider:'ipowatch',status:'ok'},gmp:{provider:'ipowatch',status:'ok'}}},...overrides};
+  const assets={'styles.css':'body{}','js/app.js':'let app=1;','js/core.js':'let core=1;','js/charts.js':'let charts=1;'};
+  const refs=Object.entries(assets).map(([file,source])=>file+'?v='+require('node:crypto').createHash('sha256').update(source).digest('hex').slice(0,12)).join(' ');
+  const files={'':'<div id="home-results"></div><div id="stunityCredit"></div>'+refs,...assets,'sw.js':'let worker=1;','data/ipos.json':ipos,'data/gmp.json':gmp,'data/source-health.json':{sources:{ipos:{provider:'ipowatch',status:'ok'},gmp:{provider:'ipowatch',status:'ok'}}},...overrides};
   return async file=>files[file];
 }
 test('public-site check validates actual assets, schema and critically stale sources',async()=>{
   const result=await checkPublished({load:fixtureLoad()});assert.equal(result.sources.ipos.records,1);
   await assert.rejects(checkPublished({load:fixtureLoad({'js/app.js':'<!doctype html>'})}),/Unexpected token/);
+  await assert.rejects(checkPublished({load:fixtureLoad({'js/app.js':'let differentRelease=true;'})}),/version mismatch/);
   await assert.rejects(checkPublished({load:fixtureLoad({'data/ipos.json':{...ipos,ipos:[]}})}),/malformed or empty/);
-  await assert.rejects(checkPublished({load:fixtureLoad({'data/gmp.json':{...gmp,fetchedAt:'2020-01-01T00:00:00Z'}})}),/critically stale/);
+  await assert.rejects(checkPublished({load:fixtureLoad({'data/gmp.json':{...gmp,fetchedAt:'2020-01-01T00:00:00Z'}})}),error=>error.refreshNeeded===true&&/critically stale/.test(error.message));
   const stale={...gmp,fetchedAt:new Date(Date.now()-3*3600000).toISOString()};
-  assert.ok((await checkPublished({load:fixtureLoad({'data/gmp.json':stale})})).warnings.length);
+  const resultStale=await checkPublished({load:fixtureLoad({'data/gmp.json':stale})});
+  assert.ok(resultStale.warnings.length);assert.equal(resultStale.refreshNeeded,true);assert.equal(result.refreshNeeded,false);
 });
 
 test('simultaneous data writers rebase and retry without losing either publication',t=>{
