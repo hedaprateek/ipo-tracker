@@ -9,6 +9,16 @@ test('market calendar dates follow India across UTC midnight regardless of host 
   assert.equal(Core.marketDate(new Date('2026-10-22T19:00:00Z')),'2026-10-23');
   assert.equal(Core.marketDate(new Date('2026-10-22T18:00:00Z')),'2026-10-22');
 });
+
+test('visits revalidate old, failed or migrated snapshots even on the same India date',()=>{
+  const now=Date.parse('2026-11-18T10:00:00Z'),day='2026-11-18';
+  const snapshot={version:3,sourceTimes:{ipos:'2026-11-18T09:30:00Z',gmp:'2026-11-18T09:30:00Z'},sourceErrors:{}};
+  assert.equal(Core.needsSnapshotRefresh(snapshot,day,now),false);
+  assert.equal(Core.needsSnapshotRefresh({...snapshot,version:2},day,now),true);
+  assert.equal(Core.needsSnapshotRefresh({...snapshot,sourceTimes:{...snapshot.sourceTimes,ipos:'2026-11-13T09:30:00Z'}},day,now),true);
+  assert.equal(Core.needsSnapshotRefresh({...snapshot,sourceErrors:{ipos:true}},day,now),true);
+  assert.equal(Core.needsSnapshotRefresh(snapshot,'2026-11-17',now),true);
+});
 test('identity removes source status suffixes and rejects ambiguous short prefixes',()=>{
   assert.equal(Core.nameKey('R.K.Fashion (U)'),Core.nameKey('R K Fashion'));
   const issues=[{company:'R.K. Fashion Accessories Limited',board:'SME'},{company:'Acme Energy Limited',board:'Mainboard'},{company:'Acme Energy Services Limited',board:'Mainboard'}];

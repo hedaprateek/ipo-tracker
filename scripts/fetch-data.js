@@ -25,7 +25,9 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const now = new Date().toISOString();
 const health=readJson('source-health.json',{sources:{}});health.checkedAt=now;
 function recordHealth(key,result,file){const previous=readJson(file,{});
+  const fresh=result.status==='fulfilled'?result.value?.find(row=>!row.archived):null;
   health.sources[key]={lastAttempt:now,lastSuccess:result.status==='fulfilled'&&result.value?.length?now:previous.fetchedAt||null,
+    provider:key==='ipos'?fresh?.source||null:'ipowatch',primaryError:fresh?.primarySourceError||null,
     status:result.status==='fulfilled'&&result.value?.length?'ok':'failed',error:result.status==='rejected'?String(result.reason?.message||'Source failed').slice(0,300):null};
   writeJson('source-health.json',health);
 }
@@ -45,7 +47,7 @@ function writeJson(file, value) {
 
 (async () => {
   const [iposRes, gmpRes] = await Promise.allSettled([
-    sources.getIposEnriched(readJson('ipos.json',{ipos:[]}).ipos),
+    sources.getIposEnriched(readJson('ipos.json',{ipos:[]}).ipos,{previousFetchedAt:readJson('ipos.json',{}).fetchedAt}),
     sources.getGmp(),
   ]);
 
@@ -59,7 +61,7 @@ function writeJson(file, value) {
     const withCats = ipos.filter((r) => r.categories?.length).length;
     const withPrices = ipos.filter((r) => r.listing).length;
 
-    writeJson('ipos.json', { ok: true, fetchedAt: now, ipos });
+    writeJson('ipos.json', { ok: true, fetchedAt: now, provider:health.sources.ipos.provider, ipos });
     console.log(
       `ipos.json: ${ipos.length} issues, ${withCats} with category bids, ` +
       `${withPrices} listed with prices`

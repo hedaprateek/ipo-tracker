@@ -105,7 +105,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/ipos') {
-      const snapshot = await cached('ipos', previous => sources.getIposEnriched(previous?.ipos || []), {force:url.searchParams.has('refresh')});
+      const snapshot = await cached('ipos', previous => sources.getIposEnriched(previous?.ipos || [],{previousFetchedAt:previous?.fetchedAt}), {force:url.searchParams.has('refresh')});
       return sendJson(res, 200, {ok:true, ...snapshot});
     }
 

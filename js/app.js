@@ -27,7 +27,7 @@ const state = {
   reports: {},
   mode: null,          // 'server' | 'static' | 'proxy'
   fetchedAt: null,
-  sourceTimes:{}, sourceErrors:{}, watch:[], compare:[], applications:{},
+  sourceTimes:{}, sourceErrors:{}, sourceProviders:{}, sourceWarnings:{}, watch:[], compare:[], applications:{},
   compareOff: new Set(),
   gmpSort: { col: 'gmpPct', dir: -1 },
   filters: { q: '', board: 'all', status: 'all', sort: 'closing' },
@@ -299,7 +299,10 @@ async function refreshData(force){
 
   if (ipoRes.status === 'fulfilled' && ipoRes.value?.ipos?.length){
     state.ipos = ipoRes.value.ipos;state.sourceTimes.ipos=ipoRes.value.fetchedAt;state.sourceErrors.ipos=ipoRes.value.sourceError||false;
-    $('#src-ipo').innerHTML = `IPOs <b>${state.ipos.length}</b> from NSE`;
+    const current=state.ipos.find(row=>!row.archived);
+    state.sourceProviders.ipos=ipoRes.value.provider||current?.source||'nse';
+    state.sourceWarnings.ipos=current?.primarySourceError||null;
+    $('#src-ipo').innerHTML = `IPOs <b>${state.ipos.length}</b>`;
     $('#src-ipo').classList.remove('err');
   } else {
     state.sourceErrors.ipos=true;$('#src-ipo').textContent = 'IPOs: fetch failed';
@@ -338,9 +341,10 @@ async function refreshData(force){
 
   if (state.ipos.length || state.gmp.length){
     state.loaded = true;
-    save(LS.snapshot, {version:2, ipos:state.ipos, gmp:state.gmp, history:state.history,
+    save(LS.snapshot, {version:3, ipos:state.ipos, gmp:state.gmp, history:state.history,
       fundamentals:state.fundamentals, corporate:state.corporate, market:state.market,
-      reports:state.reports, sourceTimes:state.sourceTimes, sourceErrors:state.sourceErrors, at:Date.now()});
+      reports:state.reports, sourceTimes:state.sourceTimes, sourceErrors:state.sourceErrors,
+      sourceProviders:state.sourceProviders,sourceWarnings:state.sourceWarnings,at:Date.now()});
   }
 
   showBanner(mode, ipoRes, gmpRes);
@@ -354,7 +358,7 @@ async function refreshData(force){
 
 function sourceState(key){return state.sourceErrors[key]?'failed':Core.freshness(state.sourceTimes[key],Date.now(),key==='market'?48*3600000:2*3600000);}
 function updateFreshness(){
-  const labels={ipos:'IPO bids',gmp:'GMP',market:'Index screen'};
+  const labels={ipos:'IPO details / bids',gmp:'GMP',market:'Index screen'};
   $('#data-health').innerHTML=Object.keys(labels).map(key=>{
     const status=sourceState(key),stamp=state.sourceTimes[key];
     return '<span data-source="'+key+'" class="health '+status+'"><b>'+labels[key]+'</b> '+(stamp?esc(relativeTime(stamp)):'not available')+' · '+status+'</span>';
@@ -362,12 +366,13 @@ function updateFreshness(){
   const problem=['ipos','gmp'].some(key=>sourceState(key)!=='current');
   $('#statusbar').classList.toggle('has-error',problem);
   $('#mode').textContent=(state.fromSaved?'Saved on this device':state.mode==='server'?'Live local fetch':'Published snapshot')+' · '+(problem?'Stale / unavailable figures · use Refresh':'view source update times');
-  ['ipos','gmp'].forEach(key=>{$(key==='ipos'?'#src-ipo':'#src-gmp').textContent=(key==='ipos'?'NSE IPOs':'IPO Watch GMP')+' · '+sourceState(key)+' · '+(state.sourceTimes[key]||'unknown timestamp');});
+  ['ipos','gmp'].forEach(key=>{$(key==='ipos'?'#src-ipo':'#src-gmp').textContent=(key==='ipos'?(state.sourceProviders.ipos==='ipowatch'?'IPO Watch IPOs (backup)':'NSE IPOs'):'IPO Watch GMP')+' · '+sourceState(key)+' · '+(state.sourceTimes[key]||'unknown timestamp');});
 }
 function showBanner(){
   const bad=['ipos','gmp'].filter(key=>sourceState(key)!=='current');
-  $('#offline-banner').hidden=!bad.length;
-  $('#offline-banner').textContent=bad.length?bad.map(key=>key==='ipos'?'IPO bids':'GMP').join(' and ')+' data is stale, unavailable or failed to refresh. Old GMP is excluded from current calculations. Verify dates and figures at the source.':'';
+  const backup=state.sourceProviders.ipos==='ipowatch'&&state.sourceWarnings.ipos;
+  $('#offline-banner').hidden=!bad.length&&!backup;
+  $('#offline-banner').textContent=(bad.length?bad.map(key=>key==='ipos'?'IPO details / bids':'GMP').join(' and ')+' data is stale, unavailable or failed to refresh. Old GMP is excluded from current calculations. Verify dates and figures at the source. ':'')+(backup?'Using IPO Watch for IPO details and bids while NSE is unavailable. Source dates are shown in each IPO detail.':'');
 }
 
 // ----------------------------------------------------------------- merging
@@ -439,9 +444,11 @@ function allIpos(){
       categories: ipo.categories || null,
       info: ipo.info || null,
       listing: ipo.listing || null,
+      source:ipo.source||'nse',sourceUrl:ipo.sourceUrl||null,sourceFetchedAt:ipo.sourceFetchedAt||(ipo.archived?null:state.sourceTimes.ipos),
+      subscriptionAsOf:ipo.subscriptionAsOf||null,archived:!!ipo.archived,
       gmp: g?.gmp ?? null, trend: g?.trend ?? null,
       estGainPct: g?.estGainPct ?? null, price: g?.price ?? null,
-      hasNse: true,
+      hasNse: ipo.source!=='ipowatch',statusHint:ipo.statusHint,
     };
   });
 
@@ -454,6 +461,7 @@ function allIpos(){
       key:g.key, histKey:g.key, name:g.name, symbol:null, board:g.board, start, end,
       priceBand: g.price ? '₹'+g.price : null, issueSize:null,
       subscription:null, categories:null, info:null, listing:null,
+      source:'ipowatch',sourceUrl:g.page||null,sourceFetchedAt:state.sourceTimes.gmp,
       gmp:g.gmp, trend:g.trend, estGainPct:g.estGainPct, price:g.price,
       hasNse:false, statusHint:g.status,
     });
@@ -463,7 +471,7 @@ function allIpos(){
   // decided, and allotment decided and waiting to be looked up. The second is
   // the one worth acting on, and the prospectus timetable dates it.
   const t = todayISO();
-  const allotmentOf = (key) => parseLongDate(state.fundamentals[key]?.timeline?.allotment);
+  const allotmentOf = (key) => state.ipos.find(row=>nameKey(row.company)===key)?.allotmentDate||parseLongDate(state.fundamentals[key]?.timeline?.allotment);
 
   return rows.map((r) => ({
     ...r,
@@ -1464,11 +1472,12 @@ function renderPerformance(){
 function renderResearch(back,r){
   const f=fundFor(r),brief=Core.research(r,f),p=Core.performance(r),entry=categoryOptions(r)[0],saved=state.decisions?.[r.key]||{};
   const source=safeSource(f.source,'Company profile & financial source'),rhp=safeSource(r.info?.rhpUrl,'Offer document');
+  const provenance='<p class="note ipo-provenance">IPO details: '+(r.source==='ipowatch'?'IPO Watch':'NSE')+' · '+(r.sourceFetchedAt?'checked '+quoteTime(r.sourceFetchedAt):'check date unavailable')+(r.subscriptionAsOf?' · subscription date '+esc(r.subscriptionAsOf):'')+(r.archived?' · saved archive':'')+'. '+safeSource(r.sourceUrl,'View IPO source')+'</p>';
   const facts=brief.facts.map(fact=>'<div class="evidence-row '+fact.kind+'"><b>'+esc(fact.title)+'</b><span>'+esc(fact.detail)+'</span></div>').join('');
   const header=`<div class="research-lead"><span class="eyebrow">Your research brief</span><h3>What does the company do?</h3><p>${esc(brief.about||'A sourced company profile is not available. Open the offer document; no business description has been invented.')}</p><div class="source-links">${source} ${rhp}</div><small class="note">Profile/financials checked ${f.fetchedAt?quoteTime(f.fetchedAt):'date unavailable'} · ${brief.coverage}/4 data groups available. Coverage is not an investment rating.</small></div>`;
   const listing=r.status==='listed'?`<section class="research-block"><h3>After the listing</h3><div class="research-metrics"><div><span>Opening gain</span><b>${percentText(p.openingGain)}</b></div><div><span>Listing close gain</span><b>${percentText(p.closingGain)}</b></div><div><span>Latest vs issue</span><b>${percentText(p.totalReturn)}</b></div><div><span>Since opening</span><b>${percentText(p.retained)}</b></div></div><p class="note">Latest quote ${money(p.latest)} · ${quoteTime(p.asOf)}. ${p.blocked?'Corporate-action adjustments are unresolved; returns withheld.':'Returns are before charges and taxes.'}</p><div id="modal-price-history"></div>${safeSource(r.listing?.source,'Market price source')}</section>`:
     `<section class="research-block sentiment-block"><h3>What is the market signalling?</h3><div class="research-metrics"><div><span>GMP · unofficial</span><b>${money(r.gmp)}</b><small>${r.gmpPct==null?'No current GMP for this issue':percentText(r.gmpPct)+' versus issue price'}</small></div><div><span>Subscription snapshot</span><b>${r.subscription==null?'Not available':r.subscription.toFixed(2)+'×'}</b><small>Bid demand, not allotment odds</small></div></div><p class="note">GMP source: ${sourceState('gmp')} · ${quoteTime(state.sourceTimes.gmp)}. A premium can disappear and is not evidence of business quality.</p></section>`;
-  $('#modal-research',back).innerHTML=header+listing+`<section class="research-block"><h3>What stands out in the reported figures?</h3>${facts||'<p class="note">Financial evidence is missing; review the offer document.</p>'}<p class="note">Only consecutive full-year figures are compared. Interim periods are not annualised. Reported EPS and peer multiples may use different periods or dilution assumptions.</p></section>
+  $('#modal-research',back).innerHTML=header+provenance+listing+`<section class="research-block"><h3>What stands out in the reported figures?</h3>${facts||'<p class="note">Financial evidence is missing; review the offer document.</p>'}<p class="note">Only consecutive full-year figures are compared. Interim periods are not annualised. Reported EPS and peer multiples may use different periods or dilution assumptions.</p></section>
     <section class="research-block questions-block"><h3>Questions before you apply</h3><ul>${brief.questions.map(q=>'<li>'+esc(q)+'</li>').join('')}</ul>${brief.uses.length?'<h4>Disclosed use of proceeds</h4><ul>'+brief.uses.slice(0,3).map(o=>'<li>'+esc(o.purpose)+'</li>').join(''):'<p class="note">Use-of-proceeds details are missing from this snapshot.</p>'}</section>
     ${r.status!=='listed'&&entry?`<section class="research-block"><h3>Try a listing-day scenario</h3><p class="note">Illustration only, not a price forecast. Original minimum application: ${money(entry.amount)} (${entry.lots} lot(s)). Allotment is not assumed.</p><label for="scenario-return">Illustrative move from issue price <output id="scenario-percent">0%</output></label><input id="scenario-return" type="range" min="-40" max="80" step="1" value="0"><div id="scenario-result" class="scenario-result"></div></section>`:''}
     <section class="research-block decision-block"><h3>Your call, your reasoning</h3><p class="note">A private research note, not an automated recommendation.</p><div class="decision-options">${['Shortlist','Research more','Pass'].map(status=>'<button data-decision="'+esc(status)+'" data-decision-key="'+esc(r.key)+'" aria-pressed="'+(saved.status===status)+'">'+status+'</button>').join('')}</div><label for="research-note">What matters to you?</label><textarea id="research-note" data-note-key="${esc(r.key)}" placeholder="For example: check customer concentration and cash flow before deciding." maxlength="1200">${esc(saved.note||'')}</textarea><p class="note" id="note-saved" role="status">Notes stay in this browser.</p></section>`;
@@ -1641,10 +1650,7 @@ function compareRow({ r, opts, rec, retail, affordable }, t){
   const closes = days === null ? '—'
     : days === 0 ? 'today' : days === 1 ? 'tomorrow' : `${days} days`;
 
-  // Rows sourced only from the GMP list have no NSE figures behind them.
-  const noData = !r.hasNse
-    ? 'not in NSE&rsquo;s feed'
-    : !opts.length ? 'terms not published' : null;
+  const noData = !opts.length ? 'terms not published' : null;
 
   const best = rec && rec.pick.key !== 'retail' ? rec.pick : null;
 
@@ -3371,14 +3377,14 @@ syncFilterUI();
 const snap = load(LS.snapshot, null);
 if (snap){
   state.ipos=snap.ipos||[];state.gmp=snap.gmp||[];state.sourceTimes=snap.sourceTimes||{};
-  for(const key of ['history','fundamentals','corporate','market','reports','sourceErrors'])state[key]=snap[key]||{};
+  for(const key of ['history','fundamentals','corporate','market','reports','sourceErrors','sourceProviders','sourceWarnings'])state[key]=snap[key]||{};
   state.loaded=!!(state.ipos.length||state.gmp.length);state.fromSaved=true;
 }
 
 showTab(location.hash.startsWith('#ipo=') ? 'ipos' : location.hash.slice(1));
 render();
 showBanner();
-if(!state.loaded||snap?.version!==2||load(LS.refreshDay,null)!==todayISO())refresh({force:true}).then(routeFromHash);
+if(!state.loaded||Core.needsSnapshotRefresh(snap,load(LS.refreshDay,null)))refresh({force:true}).then(routeFromHash);
 else routeFromHash();
 
 // Charts are sized from their container width, so re-draw on resize.

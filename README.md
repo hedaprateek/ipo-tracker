@@ -1,5 +1,24 @@
 # IPO Tracker
 
+## Data recovery — 19 November 2026
+
+NSE remains the primary IPO source. If it fails or returns no records, the refresh
+reads IPO Watch's public IPO listing and dated category subscription feeds. The
+app labels the backup provider and shows source dates in each IPO detail. Missing
+lots and categories remain missing; share bid counts are never shown as numbers
+of applications. Only the latest reported subscription day is used, and outdated
+category bids are excluded from an active issue.
+
+Previously published closed issues remain in the archive with their original
+observation and quote timestamps. Fresh backup data replaces active issue facts
+without relabelling cached archives as fresh observations. Empty/failed responses
+retain the saved snapshot. The source-health file records both the working provider
+and the NSE failure.
+
+On a visit, current same-day browser snapshots are reused. Stale, failed, and
+pre-repair snapshots are revalidated even on the same day. There is no refresh
+timer or focus-triggered fetch. Watchlists and research notes are preserved.
+
 ## Research-first redesign — 23 October 2026
 
 **Discover** is the single company-research feed. Closing/open/upcoming/saved
@@ -41,7 +60,8 @@ allotment, refund/unblock and listing stages without attaching PANs.
 
 Use `start.cmd` for a local preview with live source fetching. It opens a browser,
 binds only to loopback, and chooses a free port if 8787 is busy. The first visit each
-day (India time) refreshes data; subsequent visits restore the complete saved snapshot.
+day (India time) refreshes data; subsequent visits restore the saved snapshot while
+its IPO and GMP source timestamps are current and neither source failed.
 There is no timer or refresh on tab focus. Use Refresh whenever newer figures are needed;
 listed-price requests are reused for five minutes. The AI tools tab restores the scoped
 retail/other-category comparison, budget, Copy details and external AI choices.

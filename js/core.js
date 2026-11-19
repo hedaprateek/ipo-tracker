@@ -20,6 +20,10 @@
     const parts=new Intl.DateTimeFormat('en',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(value);
     const get=key=>parts.find(p=>p.type===key).value;return get('year')+'-'+get('month')+'-'+get('day');
   }
+  function needsSnapshotRefresh(snapshot,lastRefreshDay,now=Date.now()){
+    if(!snapshot || snapshot.version!==3 || lastRefreshDay!==marketDate(new Date(now)))return true;
+    return ['ipos','gmp'].some(key=>snapshot.sourceErrors?.[key] || freshness(snapshot.sourceTimes?.[key],now)!=='current');
+  }
   function categories(row){
     const prices=String(row.priceBand||row.info?.priceBand||row.price||'').replace(/,/g,'').match(/\d+(?:\.\d+)?/g);
     const cap=prices?Number(prices[prices.length-1]):0,lot=Number(row.info?.lotSize),perLot=cap*lot;
@@ -97,5 +101,5 @@
     questions.push('Read business risks, customer concentration, fresh issue versus offer-for-sale and use of proceeds.');
     return {about:fund.about||null,facts,questions,uses,coverage:groups.filter(Boolean).length,pe,period:last?.period||null};
   }
-  return {nameKey,matchIssue,freshness,marketDate,categories,calendar,performance,research};
+  return {nameKey,matchIssue,freshness,marketDate,needsSnapshotRefresh,categories,calendar,performance,research};
 });

@@ -13,7 +13,7 @@ const server=http.createServer((req,res)=>{
   if(!file.startsWith(root+path.sep)||pathname.startsWith('/api/')){res.writeHead(404).end();return;}
   fs.readFile(file,(error,bytes)=>{if(error){res.writeHead(404).end();return;}
     const stamp=new Date().toISOString(),today=require('../js/core').marketDate();
-    if(pathname==='/data/ipos.json'){const data=JSON.parse(bytes);data.fetchedAt=stamp;data.ipos.unshift({company:'Browser Check Example Limited',symbol:'BROWSERTEST',board:'Mainboard',start:today,end:today,priceBand:'100',info:{lotSize:100},subscription:2,categories:[{key:'retail',label:'Retail',times:2},{key:'snii',label:'sHNI',times:3},{key:'bnii',label:'bHNI',times:4}]});bytes=Buffer.from(JSON.stringify(data));}
+    if(pathname==='/data/ipos.json'){const data=JSON.parse(bytes);data.fetchedAt=stamp;data.provider='ipowatch';data.ipos.unshift({company:'Browser Check Example Limited',symbol:'BROWSERTEST',board:'Mainboard',start:today,end:today,priceBand:'100',info:{lotSize:100},subscription:2,source:'ipowatch',sourceFetchedAt:stamp,primarySourceError:'Fixture NSE unavailable',subscriptionAsOf:today,categories:[{key:'retail',label:'Retail',times:2},{key:'snii',label:'sHNI',times:3},{key:'bnii',label:'bHNI',times:4}]});bytes=Buffer.from(JSON.stringify(data));}
     if(pathname==='/data/gmp.json'){const data=JSON.parse(bytes);data.fetchedAt=stale?'2020-01-01T00:00:00Z':stamp;data.gmp.push({name:'Browser Check Example',key:'browsercheckexample',board:'Mainboard',gmp:apiVersion,price:100,status:'open'});if(sourceFailed)data.sourceError='Fixture upstream unavailable';bytes=Buffer.from(JSON.stringify(data));}
     if(pathname==='/data/source-health.json')bytes=Buffer.from(JSON.stringify({sources:{ipos:{status:'ok'},gmp:{status:'ok'}}}));
     res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.webmanifest':'application/manifest+json','.png':'image/png'})[path.extname(file)]||'text/plain');res.end(bytes);});
@@ -46,6 +46,8 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await send('Page.navigate',{url:base});await until(`!!document.querySelector('#home-results .card')&&!document.querySelector('#refresh').disabled`);
   assert.equal(await evaluate(`document.querySelector('#tab-home').hidden`),false,'Home landing');
+  assert.ok(await evaluate(`document.querySelector('#src-ipo').textContent.includes('IPO Watch IPOs (backup)')`),'Backup provider is accurately labelled');
+  assert.ok(await evaluate(`document.querySelector('#offline-banner').textContent.includes('Using IPO Watch')`),'NSE outage is explained while current backup data is available');
   const rows=[];
   for(const tab of ['home','performance','ipos','today','ai','gmp','allot','more','corp','market','cal']){
     const visible=tab==='ipos'?'home':tab==='ai'?'today':tab;
@@ -70,10 +72,16 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   const requestsBeforeReload=dataRequests;
   await send('Page.reload',{ignoreCache:true});await until(`!!document.querySelector('#today-list [data-copy]')&&!document.querySelector('#refresh').disabled`);
   assert.equal(dataRequests,requestsBeforeReload,'Same-day visit uses saved data without fetching');
+  const requestsBeforeStale=dataRequests;
+  await evaluate(`const saved=JSON.parse(localStorage.getItem('ipotracker.snapshot'));saved.sourceTimes.ipos='2020-01-01T00:00:00Z';localStorage.setItem('ipotracker.snapshot',JSON.stringify(saved));`);
+  await send('Page.reload',{ignoreCache:true});
+  await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('[data-source="ipos"]')?.textContent.includes('current')`);
+  assert.ok(dataRequests>requestsBeforeStale,'Stale same-day saved data is revalidated');
   assert.equal(await evaluate(`document.querySelector('#auto')`),null,'No automatic refresh control');
   await evaluate(`location.hash='home'`);await until(`!document.querySelector('#tab-home').hidden`);
   assert.equal(await evaluate(`document.querySelector('#home-watchlist').hidden`),true,'No duplicate watchlist feed');
   await evaluate(`document.querySelector('#home-results [data-research]').click()`);await until(`!!document.querySelector('#modal-research')`);
+  assert.ok(await evaluate(`document.querySelector('.ipo-provenance').textContent.includes('IPO Watch')`),'Detail displays the actual IPO source');
   assert.ok(await evaluate(`document.querySelector('#modal-research').textContent.includes('What does the company do?')`));
   assert.equal(await evaluate(`document.querySelector('.advanced-research').open`),false,'Advanced figures stay folded');
   const researchShot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'research-brief.png'),Buffer.from(researchShot.data,'base64'));
