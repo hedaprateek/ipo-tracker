@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'.cache','browser-check');fs.mkdirSync(out,{recursive:true});
-let stale=false,live=false,apiVersion=10,forceRequests=0,dataRequests=0,sourceFailed=false,chrome,socket;
+let stale=false,live=false,apiVersion=10,forceRequests=0,dataRequests=0,sourceFailed=false,outage=false,optionalFailed=false,invalidCore=false,chrome,socket;
 const server=http.createServer((req,res)=>{
   const request=new URL(req.url,'http://localhost');let pathname=request.pathname;
   if(pathname.startsWith('/data/')||['/api/ipos','/api/gmp'].includes(pathname))dataRequests++;
@@ -9,6 +9,9 @@ const server=http.createServer((req,res)=>{
     if(request.searchParams.has('refresh'))forceRequests++;
     pathname=pathname.replace('/api/','/data/')+'.json';
   }
+  if(outage&&pathname.startsWith('/data/')){res.writeHead(503).end('Source temporarily unavailable');return;}
+  if(optionalFailed&&/^\/data\/(reports|fundamentals|corporate|market|gmp-history)\.json$/.test(pathname)){res.writeHead(503).end('Optional source unavailable');return;}
+  if(invalidCore&&['/data/ipos.json','/data/gmp.json'].includes(pathname)){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({fetchedAt:new Date().toISOString(),ipos:[null],gmp:[{name:'Bad',key:'bad',gmp:'not a number'}]}));return;}
   const file=path.resolve(root,'.'+(pathname==='/'?'/index.html':pathname));
   if(!file.startsWith(root+path.sep)||pathname.startsWith('/api/')){res.writeHead(404).end();return;}
   fs.readFile(file,(error,bytes)=>{if(error){res.writeHead(404).end();return;}
@@ -122,6 +125,22 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
     assert.ok(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),'Home fits '+width);
     const shot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'home-'+width+'.png'),Buffer.from(shot.data,'base64'));
   }
+  const savedBeforeOutage=await evaluate(`JSON.parse(localStorage.getItem('ipotracker.snapshot'))`);
+  optionalFailed=true;await evaluate(`document.querySelector('#refresh').click()`);
+  await until(`document.querySelector('#refresh')?.disabled===false`);
+  const afterOptional=await evaluate(`JSON.parse(localStorage.getItem('ipotracker.snapshot'))`);
+  for(const key of ['fundamentals','reports','history','corporate','market'])assert.deepEqual(afterOptional[key],savedBeforeOutage[key],'Optional failure preserves '+key);
+  outage=true;await evaluate(`document.querySelector('#refresh').click()`);
+  await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('[data-source="ipos"]')?.textContent.includes('failed')`);
+  const afterOutage=await evaluate(`JSON.parse(localStorage.getItem('ipotracker.snapshot'))`);
+  assert.deepEqual(afterOutage.ipos,afterOptional.ipos,'Total outage preserves IPO records');
+  assert.deepEqual(afterOutage.sourceTimes,afterOptional.sourceTimes,'Total outage never advances source timestamps');
+  assert.ok(await evaluate(`!!document.querySelector('#home-results .card')`),'Saved cards remain usable during outage');
+  outage=false;invalidCore=true;await evaluate(`document.querySelector('#refresh').click()`);
+  await until(`document.querySelector('#refresh')?.disabled===false`);
+  assert.deepEqual(await evaluate(`JSON.parse(localStorage.getItem('ipotracker.snapshot')).ipos`),afterOptional.ipos,'Malformed payload cannot replace saved data');
+  invalidCore=false;optionalFailed=false;await evaluate(`document.querySelector('#refresh').click()`);
+  await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('[data-source="ipos"]')?.textContent.includes('current')`);
   stale=true;await evaluate(`localStorage.setItem('ipotracker.refreshDay',JSON.stringify('2000-01-01'))`);await send('Page.reload',{ignoreCache:true});await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#data-health')?.textContent.includes('stale')`);
   assert.ok(dataRequests>requestsBeforeReload,'First visit on a different day fetches new data');
   assert.ok(await evaluate(`document.querySelector('#offline-banner').textContent.includes('GMP')`),'Stale GMP warning');
@@ -159,5 +178,9 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   await until(`!document.querySelector('#refresh').disabled&&document.querySelector('[data-source="gmp"]').textContent.includes('failed')`);
   assert.ok(await evaluate(`!document.querySelector('#offline-banner').hidden`),'Fallback source errors are visible');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape'});await until(`!document.querySelector('.modal-backdrop')`);
-  assert.deepEqual(errors,[]);console.log('PASS: '+rows.length+' views, daily first-load refresh, same-day saved data, AI copy and destination selection, mobile/desktop scrolling, live detail refresh and preservation, failed-source fallback, watchlist, comparison, application stages, masked IDs, opt-in storage, calendar download, stale GMP exclusion, detail dialogs.');
+  outage=true;await evaluate(`location.hash='home';localStorage.removeItem('ipotracker.snapshot');localStorage.removeItem('ipotracker.refreshDay')`);
+  await send('Page.reload',{ignoreCache:true});
+  await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#home-results')?.textContent.includes('temporarily unavailable')`);
+  assert.ok(await evaluate(`Object.values(JSON.parse(localStorage.getItem('ipotracker.decisions'))).some(d=>d.note==='Check cash flow before deciding')`),'Cold-start outage preserves personal notes');
+  assert.deepEqual(errors,[]);console.log('PASS: '+rows.length+' views, saved-data and malformed-response recovery, optional and total outages, cold-start recovery, source labels, mobile/desktop scrolling, detail refresh, notes, watchlist, comparison, applications, masked IDs, calendar download and stale GMP exclusion.');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{clearTimeout(watchdog);socket?.close();chrome?.kill();server.close();server.closeAllConnections();});

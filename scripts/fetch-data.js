@@ -23,11 +23,14 @@ const sources = require('../lib/sources');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const now = new Date().toISOString();
+const CORE_ONLY=process.argv.includes('--core-only');
+const ENRICH_ONLY=process.argv.includes('--enrich-only');
 const health=readJson('source-health.json',{sources:{}});health.checkedAt=now;
 function recordHealth(key,result,file){const previous=readJson(file,{});
   const fresh=result.status==='fulfilled'?result.value?.find(row=>!row.archived):null;
   health.sources[key]={lastAttempt:now,lastSuccess:result.status==='fulfilled'&&result.value?.length?now:previous.fetchedAt||null,
     provider:key==='ipos'?fresh?.source||null:'ipowatch',primaryError:fresh?.primarySourceError||null,
+    componentError:key==='ipos'?result.value?.find(row=>row.subscriptionError)?.subscriptionError||null:null,
     status:result.status==='fulfilled'&&result.value?.length?'ok':'failed',error:result.status==='rejected'?String(result.reason?.message||'Source failed').slice(0,300):null};
   writeJson('source-health.json',health);
 }
@@ -41,20 +44,28 @@ function readJson(file, fallback) {
 }
 
 function writeJson(file, value) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(value), 'utf8');
+  require('../lib/storage').writeJson(path.join(DATA_DIR,file),value);
 }
 
 (async () => {
+  const checked=(key,rows)=>{
+    if(!require('../js/core').validSnapshot(key,{[key]:rows,fetchedAt:now}))throw Error(`Invalid ${key} snapshot; saved data retained`);
+    return rows;
+  };
+  const cached=key=>{
+    const data=readJson(key+'.json',{});
+    if(require('../js/core').freshness(data.fetchedAt)!=='current')return Promise.reject(Error(`Saved ${key} is stale; enrichment skipped`));
+    try{return Promise.resolve(checked(key,data[key]));}catch(error){return Promise.reject(error);}
+  };
   const [iposRes, gmpRes] = await Promise.allSettled([
-    sources.getIposEnriched(readJson('ipos.json',{ipos:[]}).ipos,{previousFetchedAt:readJson('ipos.json',{}).fetchedAt}),
-    sources.getGmp(),
+    ENRICH_ONLY?cached('ipos'):sources.getIposEnriched(readJson('ipos.json',{ipos:[]}).ipos,{previousFetchedAt:readJson('ipos.json',{}).fetchedAt}).then(rows=>checked('ipos',rows)),
+    ENRICH_ONLY?cached('gmp'):sources.getGmp().then(rows=>checked('gmp',rows)),
   ]);
 
   let ok = 0;
-  recordHealth('ipos',iposRes,'ipos.json');recordHealth('gmp',gmpRes,'gmp.json');
+  if(!ENRICH_ONLY){recordHealth('ipos',iposRes,'ipos.json');recordHealth('gmp',gmpRes,'gmp.json');}
 
-  if (iposRes.status === 'fulfilled' && iposRes.value.length) {
+  if (!ENRICH_ONLY&&iposRes.status === 'fulfilled' && iposRes.value.length) {
     // Categories, issue terms and listing prices are all attached by
     // getIposEnriched, so the server and this script cannot drift apart.
     const ipos = iposRes.value;
@@ -67,19 +78,19 @@ function writeJson(file, value) {
       `${withPrices} listed with prices`
     );
     ok++;
-  } else {
+  } else if(!ENRICH_ONLY){
     console.error('NSE failed:', iposRes.reason?.message || 'empty response');
   }
 
   if (gmpRes.status === 'fulfilled' && gmpRes.value.length) {
-    writeJson('gmp.json', { ok: true, fetchedAt: now, gmp: gmpRes.value });
+    if(!ENRICH_ONLY)writeJson('gmp.json', { ok: true, fetchedAt: now, gmp: gmpRes.value });
 
-    let history = sources.recordHistory(readJson('gmp-history.json', {}), gmpRes.value, now);
+    let history = ENRICH_ONLY?readJson('gmp-history.json', {}):sources.recordHistory(readJson('gmp-history.json', {}), gmpRes.value, now);
 
     // IPO Watch keeps one to two weeks of day-by-day GMP per IPO. This app can
     // only ever observe the present, so without the backfill a fresh deploy
     // shows a few hours of trend and the wider ranges have nothing to draw.
-    try {
+    if(!CORE_ONLY)try {
       const { added, touched } = await sources.backfillHistory(history, gmpRes.value);
       if (added) console.log(`backfilled ${added} historical points across ${touched} IPOs`);
     } catch (err) {
@@ -91,7 +102,7 @@ function writeJson(file, value) {
     // app missed for everything that concluded before it existed. IPO Watch
     // keeps those pages up, so the record is reconstructed once per IPO and
     // then skipped on every later run.
-    if (iposRes.status === 'fulfilled') {
+    if (!CORE_ONLY&&iposRes.status === 'fulfilled') {
       try {
         const listed = iposRes.value.filter((r) => r.listing && r.company);
         const { added, touched } = await sources.backfillListedHistory(history, listed);
@@ -111,6 +122,8 @@ function writeJson(file, value) {
   } else {
     console.error('IPO Watch failed:', gmpRes.reason?.message || 'empty response');
   }
+
+  if(CORE_ONLY){if(!ok)process.exitCode=1;return;}
 
   // What the company reports, beside what the market feels. Only issues that
   // are still a decision are worth the requests, and an issue's figures do not
@@ -175,7 +188,7 @@ function writeJson(file, value) {
     console.warn('corporate actions skipped:', err.message);
   }
 
-  if (!ok) {
+  if (!ENRICH_ONLY&&!ok) {
     console.error('both upstreams failed; leaving existing data untouched');
     process.exit(1);
   }

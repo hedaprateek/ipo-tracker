@@ -1,5 +1,4 @@
-/* IPO Tracker — application logic. Classic script (no modules) so the page
-   still opens from file:// as a degraded fallback. */
+/* IPO Tracker — application logic for the hosted site and local server. */
 (function () {
 'use strict';
 
@@ -25,7 +24,7 @@ const state = {
   gmp: [],
   history: {},
   reports: {},
-  mode: null,          // 'server' | 'static' | 'proxy'
+  mode: null,          // 'server' | 'static'
   fetchedAt: null,
   sourceTimes:{}, sourceErrors:{}, sourceProviders:{}, sourceWarnings:{}, watch:[], compare:[], applications:{},
   compareOff: new Set(),
@@ -124,108 +123,21 @@ function toast(msg){
 
 // ---------------------------------------------------------------- fetching
 
-const PROXIES = [
-  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-];
-
-async function viaProxy(url, asText){
-  let lastErr;
-  for (const make of PROXIES){
-    try {
-      const res = await fetch(make(url), { cache:'no-store' });
-      if (!res.ok) throw new Error(String(res.status));
-      const text = await res.text();
-      if (/^error code:/i.test(text)) throw new Error('proxy rejected');
-      return asText ? text : JSON.parse(text);
-    } catch (err){ lastErr = err; }
-  }
-  throw lastErr || new Error('all proxies failed');
-}
-
-const json = (u) => fetch(u, { cache:'no-store', signal:AbortSignal.timeout(90000) }).then((r) => {
+const json = (u,timeout=12000) => fetch(u, { cache:'no-store', signal:AbortSignal.timeout(timeout) }).then((r) => {
   if (!r.ok) throw new Error(String(r.status));
   return r.json();
 });
 
 async function detectMode(){
   if (state.mode) return state.mode;
+  // Published sites always read their own snapshots. A temporary JSON outage
+  // must not switch visitors to unrelated CORS proxies or obsolete parsers.
+  if(!['localhost','127.0.0.1','[::1]'].includes(location.hostname))return (state.mode='static');
   try {
-    const res = await fetch('api/health', { cache:'no-store' });
+    const res = await fetch('api/health', { cache:'no-store',signal:AbortSignal.timeout(2000) });
     if (res.ok && (await res.json()).ok === true) return (state.mode = 'server');
   } catch {}
-  try {
-    const d = await json('data/gmp.json');
-    if (Array.isArray(d.gmp)) return (state.mode = 'static');
-  } catch {}
-  return (state.mode = 'proxy');
-}
-
-function isoFromNse(s){
-  const m = String(s||'').match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})/);
-  if (!m) return null;
-  const mm = MONTHS[m[2].toLowerCase()];
-  return mm ? `${m[3]}-${mm}-${m[1].padStart(2,'0')}` : null;
-}
-
-async function fetchIposDirect(){
-  const base = 'https://www.nseindia.com/api/';
-  const [cur, up, past] = await Promise.all([
-    viaProxy(base+'ipo-current-issue').catch(()=>[]),
-    viaProxy(base+'all-upcoming-issues?category=ipo').catch(()=>[]),
-    viaProxy(base+'public-past-issues').catch(()=>[]),
-  ]);
-  const arr = (x) => Array.isArray(x) ? x : [];
-  const bySymbol = new Map();
-  const put = (r) => {
-    if (!r.symbol) return;
-    const prev = bySymbol.get(r.symbol) || {};
-    for (const [k,v] of Object.entries(r)) if (v || v === 0) prev[k] = v;
-    bySymbol.set(r.symbol, prev);
-  };
-  for (const r of arr(cur)) put({ symbol:r.symbol, company:r.companyName, series:r.series,
-    start:isoFromNse(r.issueStartDate), end:isoFromNse(r.issueEndDate),
-    priceBand:r.issuePrice, issueSize:r.issueSize,
-    subscription: r.noOfTime ? Number(r.noOfTime) : null });
-  for (const r of arr(up)) put({ symbol:r.symbol, company:r.companyName, series:r.series,
-    start:isoFromNse(r.issueStartDate), end:isoFromNse(r.issueEndDate),
-    priceBand:r.issuePrice, issueSize:r.issueSize });
-  for (const r of arr(past)) put({ symbol:r.symbol, company:r.company, series:r.securityType,
-    start:isoFromNse(r.ipoStartDate), end:isoFromNse(r.ipoEndDate), priceBand:r.priceRange,
-    listingDate:(r.listingDate && r.listingDate !== '-') ? isoFromNse(r.listingDate) : null });
-  return [...bySymbol.values()].map((r) => ({
-    ...r, board: String(r.series||'').toUpperCase() === 'SME' ? 'SME' : 'Mainboard',
-  }));
-}
-
-function stripTags(s){
-  return s.replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
-    .replace(/&#8377;|&#x20b9;/g,'₹').replace(/\s+/g,' ').trim();
-}
-function parseMoney(s){
-  const m = String(s||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
-}
-
-async function fetchGmpDirect(){
-  const html = await viaProxy('https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/', true);
-  const tables = html.match(/<table[\s\S]*?<\/table>/g) || [];
-  const out = [];
-  tables.slice(0,2).forEach((table, idx) => {
-    const board = idx === 0 ? 'Mainboard' : 'SME';
-    for (const row of (table.match(/<tr[\s\S]*?<\/tr>/g) || [])){
-      const c = (row.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || []).map(stripTags);
-      if (c.length < 7 || /ipo\s*name/i.test(c[0])) continue;
-      const gain = String(c[4]).match(/\(([-\d.]+)%\)/);
-      out.push({ name:c[0], key:nameKey(c[0]), board, gmp:parseMoney(c[1]),
-        trend: /🟢/.test(c[2]) ? 'up' : /🔴/.test(c[2]) ? 'down' : 'flat',
-        price:parseMoney(c[3]), estListing:parseMoney(c[4]),
-        estGainPct: gain ? Number(gain[1]) : null,
-        dates:c[5], status:String(c[6]).toLowerCase(), updated:c[7] });
-    }
-  });
-  return out;
+  return (state.mode='static');
 }
 
 // Static history is authoritative; refreshing an old quote must never create a new observation.
@@ -244,7 +156,7 @@ function setBusy(busy){
 
 const emptyText = (filtered) => state.loaded
   ? (filtered || 'Nothing matches these filters.')
-  : 'Loading…';
+  : state.loadFailed?'Data is temporarily unavailable. Please try Refresh again.':'Loading…';
 
 function setRefreshLabel(btn, wide, narrow){
   const w = $('.on-wide', btn);
@@ -274,34 +186,32 @@ async function refreshData(force){
   let ipoJob, gmpJob;
 
   if (mode === 'server'){
-    ipoJob = json('api/ipos'+(force?'?refresh=1':''));
-    gmpJob = json('api/gmp'+(force?'?refresh=1':''));
-  } else if (mode === 'static'){
+    ipoJob = json('api/ipos'+(force?'?refresh=1':''),75000);
+    gmpJob = json('api/gmp'+(force?'?refresh=1':''),75000);
+  } else {
     ipoJob = json('data/ipos.json');
     gmpJob = Promise.all([
       json('data/gmp.json'),
-      json('data/gmp-history.json').catch(() => ({})),
+      json('data/gmp-history.json',4000).catch(() => null),
     ]).then(([g, history]) => ({ gmp: g.gmp, history, fetchedAt: g.fetchedAt }));
-  } else {
-    ipoJob = fetchIposDirect().then(ipos=>({ipos,fetchedAt:new Date().toISOString()}));
-    gmpJob = fetchGmpDirect().then((gmp) => ({ gmp,fetchedAt:new Date().toISOString() }));
   }
 
   // Reports and fundamentals are optional everywhere — absence is not an error.
-  const reportJob = json('data/reports.json').catch(() => null);
-  const fundJob = json('data/fundamentals.json').catch(() => null);
-  const corpJob = json('data/corporate.json').catch(() => null);
-  const marketJob = json('data/market.json').catch(() => null);
-  const healthJob=json('data/source-health.json').catch(()=>null);
+  const reportJob = json('data/reports.json',4000).catch(() => null);
+  const fundJob = json('data/fundamentals.json',4000).catch(() => null);
+  const corpJob = json('data/corporate.json',4000).catch(() => null);
+  const marketJob = json('data/market.json',4000).catch(() => null);
+  const healthJob=json('data/source-health.json',4000).catch(()=>null);
 
   const [ipoRes, gmpRes, repRes, fundRes, corpRes, marketRes,healthRes] =
     await Promise.allSettled([ipoJob, gmpJob, reportJob, fundJob, corpJob, marketJob,healthJob]);
 
-  if (ipoRes.status === 'fulfilled' && ipoRes.value?.ipos?.length){
+  if (ipoRes.status === 'fulfilled' && Core.validSnapshot('ipos',ipoRes.value)){
     state.ipos = ipoRes.value.ipos;state.sourceTimes.ipos=ipoRes.value.fetchedAt;state.sourceErrors.ipos=ipoRes.value.sourceError||false;
     const current=state.ipos.find(row=>!row.archived);
     state.sourceProviders.ipos=ipoRes.value.provider||current?.source||'nse';
     state.sourceWarnings.ipos=current?.primarySourceError||null;
+    state.sourceWarnings.categories=state.ipos.some(row=>row.subscriptionError)?'Category bids could not be refreshed; unavailable categories are left blank.':null;
     $('#src-ipo').innerHTML = `IPOs <b>${state.ipos.length}</b>`;
     $('#src-ipo').classList.remove('err');
   } else {
@@ -309,10 +219,10 @@ async function refreshData(force){
     $('#src-ipo').classList.add('err');
   }
 
-  if (gmpRes.status === 'fulfilled' && gmpRes.value?.gmp?.length){
+  if (gmpRes.status === 'fulfilled' && Core.validSnapshot('gmp',gmpRes.value)){
     state.gmp = gmpRes.value.gmp.filter(g=>g.key&&nameKey(g.name)!=='company');
     state.sourceTimes.gmp=gmpRes.value.fetchedAt;state.sourceErrors.gmp=gmpRes.value.sourceError||false;
-    if (gmpRes.value.history) state.history = gmpRes.value.history;
+    if (Core.isRecord(gmpRes.value.history)) state.history = gmpRes.value.history;
     state.fetchedAt = gmpRes.value.fetchedAt || new Date().toISOString();
     recordLocalHistory(state.gmp);
     histKeyCache.clear();
@@ -323,10 +233,10 @@ async function refreshData(force){
     $('#src-gmp').classList.add('err');
   }
 
-  state.fundamentals = (fundRes.status === 'fulfilled' && fundRes.value) || {};
-  state.corporate = (corpRes.status === 'fulfilled' && corpRes.value) || {};
-  state.market = (marketRes.status === 'fulfilled' && marketRes.value) || {};
-  state.reports = (repRes.status === 'fulfilled' && repRes.value?.reports) || {};
+  if(fundRes.status==='fulfilled'&&Core.isRecord(fundRes.value)&&fundRes.value.ok!==false)state.fundamentals=fundRes.value;
+  if(corpRes.status==='fulfilled'&&Core.isRecord(corpRes.value)&&Array.isArray(corpRes.value.actions))state.corporate=corpRes.value;
+  if(marketRes.status==='fulfilled'&&Core.isRecord(marketRes.value)&&marketRes.value.ok!==false)state.market=marketRes.value;
+  if(repRes.status==='fulfilled'&&Core.isRecord(repRes.value?.reports))state.reports=repRes.value.reports;
   const nReports = Object.keys(state.reports).length;
   $('#src-report').textContent = nReports
     ? `${nReports} AI report${nReports === 1 ? '' : 's'}`
@@ -347,6 +257,7 @@ async function refreshData(force){
       sourceProviders:state.sourceProviders,sourceWarnings:state.sourceWarnings,at:Date.now()});
   }
 
+  state.loadFailed=!state.ipos.length&&!state.gmp.length;
   showBanner(mode, ipoRes, gmpRes);
   render();
   refreshOpenDetail();
@@ -371,8 +282,8 @@ function updateFreshness(){
 function showBanner(){
   const bad=['ipos','gmp'].filter(key=>sourceState(key)!=='current');
   const backup=state.sourceProviders.ipos==='ipowatch'&&state.sourceWarnings.ipos;
-  $('#offline-banner').hidden=!bad.length&&!backup;
-  $('#offline-banner').textContent=(bad.length?bad.map(key=>key==='ipos'?'IPO details / bids':'GMP').join(' and ')+' data is stale, unavailable or failed to refresh. Old GMP is excluded from current calculations. Verify dates and figures at the source. ':'')+(backup?'Using IPO Watch for IPO details and bids while NSE is unavailable. Source dates are shown in each IPO detail.':'');
+  $('#offline-banner').hidden=!bad.length&&!backup&&!state.sourceWarnings.categories;
+  $('#offline-banner').textContent=(bad.length?bad.map(key=>key==='ipos'?'IPO details / bids':'GMP').join(' and ')+' data is stale, unavailable or failed to refresh. Old GMP is excluded from current calculations. Verify dates and figures at the source. ':'')+(backup?'Using IPO Watch for IPO details and bids while NSE is unavailable. Source dates are shown in each IPO detail. ':'')+(state.sourceWarnings.categories||'');
 }
 
 // ----------------------------------------------------------------- merging
@@ -1466,7 +1377,7 @@ function renderPerformance(){
   $('#performance-summary').innerHTML=[['Listed issues',String(all.length)],['With a market quote',String(quoted.length)],['Above issue price',String(returns.filter(v=>v>0).length)+' / '+returns.length],['Median since issue',middle==null?'—':signed(middle)]]
     .map(([label,value])=>'<div class="outcome-stat"><b>'+value+'</b><span>'+label+'</span></div>').join('');
   $('#performance-coverage').textContent=visible.length+' matches · '+quoted.length+'/'+all.length+' have recorded quotes. Opening prices are shown only when the listing-day open is available. Summaries describe the quoted sample, not every IPO; timestamps differ.';
-  $('#performance-list').innerHTML=visible.slice(0,state.performanceLimit||18).map(performanceCard).join('')||'<p class="empty">No matching listed IPOs.</p>';
+  $('#performance-list').innerHTML=visible.slice(0,state.performanceLimit||18).map(performanceCard).join('')||'<p class="empty">'+esc(emptyText('No matching listed IPOs.'))+'</p>';
   if(visible.length>(state.performanceLimit||18))$('#performance-list').insertAdjacentHTML('beforeend','<button class="load-more" data-load-performance>Show more listings</button>');
 }
 function renderResearch(back,r){
@@ -2972,7 +2883,7 @@ function renderHome(){
   const visible=scoped.filter(r=>(board==='all'||r.board===board)&&(!query||(r.name+' '+(r.symbol||'')+' '+(fundFor(r).about||'')).toLowerCase().includes(query)));
   const title=query?'Research results':scope==='closing'?'Closing today':scope==='upcoming'?'Coming to market':scope==='saved'?'Your saved research':'Open for research';
   $('#home-results').innerHTML='<div class="section-heading"><h3>'+title+'</h3><span>'+visible.length+' issues</span></div><div class="cards research-cards">'+
-    (visible.slice(0,state.discoveryLimit||12).map(r=>card(r,today)).join('')||'<p class="empty">No issues here. Choose another status or search a business.</p>')+'</div>'+
+    (visible.slice(0,state.discoveryLimit||12).map(r=>card(r,today)).join('')||'<p class="empty">'+esc(emptyText('No issues here. Choose another status or search a business.'))+'</p>')+'</div>'+
     (visible.length>(state.discoveryLimit||12)?'<button class="load-more" data-load-research>Show more companies</button>':'');
   $('#home-watchlist').hidden=true;$('#home-watchlist').textContent='';
   const events=calendarEvents().filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,3);
@@ -3374,17 +3285,20 @@ state.filters = { ...state.filters, ...load(LS.filters, {}) };
 state.range = load(LS.range, state.range);
 syncFilterUI();
 
-const snap = load(LS.snapshot, null);
+const savedCandidate=load(LS.snapshot,null);
+const snap=Core.isRecord(savedCandidate)?savedCandidate:null;
+const savedIposValid=Core.validSnapshot('ipos',{ipos:snap?.ipos,fetchedAt:snap?.sourceTimes?.ipos});
+const savedGmpValid=Core.validSnapshot('gmp',{gmp:snap?.gmp,fetchedAt:snap?.sourceTimes?.gmp});
 if (snap){
-  state.ipos=snap.ipos||[];state.gmp=snap.gmp||[];state.sourceTimes=snap.sourceTimes||{};
-  for(const key of ['history','fundamentals','corporate','market','reports','sourceErrors','sourceProviders','sourceWarnings'])state[key]=snap[key]||{};
+  state.ipos=savedIposValid?snap.ipos:[];state.gmp=savedGmpValid?snap.gmp:[];state.sourceTimes=Core.isRecord(snap.sourceTimes)?snap.sourceTimes:{};
+  for(const key of ['history','fundamentals','corporate','market','reports','sourceErrors','sourceProviders','sourceWarnings'])state[key]=Core.isRecord(snap[key])?snap[key]:{};
   state.loaded=!!(state.ipos.length||state.gmp.length);state.fromSaved=true;
 }
 
 showTab(location.hash.startsWith('#ipo=') ? 'ipos' : location.hash.slice(1));
 render();
 showBanner();
-if(!state.loaded||Core.needsSnapshotRefresh(snap,load(LS.refreshDay,null)))refresh({force:true}).then(routeFromHash);
+if(!savedIposValid||!savedGmpValid||Core.needsSnapshotRefresh(snap,load(LS.refreshDay,null)))refresh({force:true}).then(routeFromHash);
 else routeFromHash();
 
 // Charts are sized from their container width, so re-draw on resize.

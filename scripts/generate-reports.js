@@ -43,8 +43,7 @@ function readJson(file, fallback) {
 }
 
 function writeJson(file, value) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(value, null, 1), 'utf8');
+  require('../lib/storage').writeJson(path.join(DATA_DIR,file),value);
 }
 
 /**

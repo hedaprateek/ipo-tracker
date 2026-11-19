@@ -26,6 +26,7 @@ permissions:
 jobs:
   screen:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -42,14 +43,5 @@ jobs:
       - name: Screen the index
         run: node scripts/fetch-market.js nifty50
 
-      - name: Commit if changed
-        run: |
-          git config user.name  'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/market.json
-          if git diff --staged --quiet; then
-            echo "no change"
-          else
-            git commit -m "data: stock screen $(date -u '+%Y-%m-%d %H:%M') UTC"
-            git push
-          fi
+      - name: Publish stock data with bounded conflict retries
+        run: node scripts/publish-data.cjs market

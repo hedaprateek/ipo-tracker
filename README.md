@@ -1,5 +1,39 @@
 # IPO Tracker
 
+## Stability safeguards — 20 November 2026
+
+The browser reads published snapshots or the local server. It does not switch to
+public CORS proxies when a request fails. Empty or malformed core snapshots are
+rejected; saved IPOs, source timestamps, research, history and personal notes
+survive outages. Optional files have a four-second request budget. A visitor with
+no saved data gets an explicit unavailable state and can retry with Refresh.
+`npm run build` stamps script/style URLs with content hashes; CI rejects stale
+asset references so cached browser files cannot silently mix incompatible releases.
+
+Upstream transport errors, HTTP 429 and server errors get one bounded retry.
+Permanent HTTP errors and invalid JSON fail promptly. Subscription-feed failures
+are recorded separately from successful issue-list updates. JSON persistence uses
+temporary files and atomic replacement; failed writes retain the previous file.
+
+The scheduled workflow publishes essential data with `fetch-data.js --core-only`
+before optional backfills, fundamentals, corporate actions or AI reports. Those
+extras run against saved data with `--enrich-only` and have separate time limits;
+they do not advance source timestamps. Both data writers use `publish-data.cjs`
+to rebase and retry rejected pushes, without force-pushing or including unrelated
+staged changes. The IPO schedule uses minutes 7 and 37 to avoid the hour boundary.
+
+`Check published website` runs after successful Pages deployments, hourly at
+minute 23, and on manual dispatch. It checks public HTML, CSS, JavaScript syntax,
+JSON schemas, source status and freshness. Sources older than two hours produce
+warnings; any source older than six hours, invalid assets or malformed data fail
+the check. Results are visible in GitHub Actions. This also detects missing
+refreshes independently of the data-fetch job.
+
+These safeguards keep outages from erasing usable data; they do not guarantee
+fresh quotes while both providers are unavailable. GitHub schedules can be delayed
+or dropped under load ([GitHub documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)).
+Use `npm test`, `npm run smoke`, and `npm run check:published` to verify changes.
+
 ## Data recovery — 19 November 2026
 
 NSE remains the primary IPO source. If it fails or returns no records, the refresh
@@ -279,18 +313,17 @@ A normal run prints the token count and, on Anthropic, an estimated cost.
 ## How data reaches the page
 
 NSE and IPO Watch send no `Access-Control-Allow-Origin` header, so the browser
-cannot read them directly. The page tries three sources and uses the first that
-answers — the mode it picked is shown in the status bar.
+cannot read them directly. The page uses the local server when available on
+loopback, otherwise published JSON. The selected mode is shown in the status bar.
 
 | Mode | When | How |
 |---|---|---|
-| `server` | `node server.js` is running | Proxies both upstreams same-origin, caching 60s (NSE) and 5min (GMP). Always current. |
-| `static` | GitHub Pages | Reads `data/*.json` committed by the scheduled Action. Up to 30 minutes stale. |
-| `proxy` | `file://`, no server | Public CORS proxies. Usually rate-limited or down; shows a banner saying so. |
+| `server` | `node server.js` is running | Fetches sources through the local server and retains saved data on failure. |
+| `static` | GitHub Pages or another static host | Reads published `data/*.json`; displays each source's actual update time. |
 
 The Action is [`.github/workflows/fetch-data.yml`](.github/workflows/fetch-data.yml).
-It runs `scripts/fetch-data.js` every 30 minutes, then `scripts/generate-reports.js`,
-and commits the result — which is also what accumulates
+It schedules essential refreshes twice an hour, publishes them, and then runs
+optional enrichment and `scripts/generate-reports.js`. Committed updates also accumulate
 `data/gmp-history.json`, so the trend on the published site is shared by
 everyone rather than rebuilt per browser. If one upstream fails the other still
 updates and the old file is left alone. Run it by hand from the Actions tab with

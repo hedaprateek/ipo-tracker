@@ -37,11 +37,9 @@ const index = process.argv[2] || 'nifty50';
     process.exit(1);
   }
 
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(
+  require('../lib/storage').writeJson(
     path.join(DATA_DIR, 'market.json'),
-    JSON.stringify({ ok: true, fetchedAt: new Date().toISOString(), ...screen }),
-    'utf8'
+    { ok: true, fetchedAt: new Date().toISOString(), ...screen }
   );
 
   console.log(

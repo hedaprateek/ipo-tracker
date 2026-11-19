@@ -11,6 +11,13 @@ for(const [key,file] of [['IPO bids','ipos.json'],['GMP','gmp.json']]){
 if(!current)failed=true;
 else if(current<2)lines.push('- Partial refresh: one source is unavailable; its saved data remains flagged in the app.');
 console.log(lines.join('\n'));if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join('\n')+'\n');
+try{
+  const health=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/source-health.json'),'utf8'));
+  for(const [key,source] of Object.entries(health.sources||{})){
+    console.log(`${key} provider: ${source.provider||'unknown'}`);
+    if(source.componentError)console.error('::warning::Category bids unavailable: '+String(source.componentError).replace(/[\r\n]/g,' '));
+  }
+}catch{}
 if(process.env.IPO_FETCH_OUTCOME==='failure'){
   console.error('::error::Source refresh failed; saved data and source health have been preserved');
   failed=true;

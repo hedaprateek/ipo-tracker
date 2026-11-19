@@ -6,7 +6,7 @@ name: Fetch IPO data
 on:
   schedule:
     # Every 30 minutes. GitHub queues cron jobs, so expect some drift.
-    - cron: '*/30 * * * *'
+    - cron: '7,37 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -40,15 +40,29 @@ jobs:
 
       - name: Fetch NSE and GMP data
         id: fetch
-        run: node scripts/fetch-data.js
+        run: node scripts/fetch-data.js --core-only
         # The script preserves saved data and writes source-health.json even
         # when both feeds fail. Publish that status before reporting failure.
+        continue-on-error: true
+
+      - name: Publish essential data before optional enrichment
+        run: node scripts/publish-data.cjs core
+
+      - name: Check source health after publishing updates
+        env:
+          IPO_FETCH_OUTCOME: ${{ steps.fetch.outcome }}
+        run: node scripts/check-health.js
+
+      - name: Enrich saved data without delaying essential publication
+        run: node scripts/fetch-data.js --enrich-only
+        timeout-minutes: 3
         continue-on-error: true
 
       # Only regenerates a report when an IPO's facts have materially changed,
       # so most runs make no API calls at all. Never fails the workflow: without
       # a key the script exits 0 and the rest of the data still publishes.
       - name: Generate apply/avoid reports
+        timeout-minutes: 2
         if: steps.fetch.outcome == 'success'
         env:
           # Whichever is set wins, Gemini first — it has a free tier.
@@ -59,20 +73,5 @@ jobs:
         run: node scripts/generate-reports.js
         continue-on-error: true
 
-      - name: Commit if changed
-        run: |
-          git config user.name  'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/
-          if git diff --staged --quiet; then
-            echo "no change"
-            exit 0
-          fi
-          git commit -m "data: refresh $(date -u '+%Y-%m-%d %H:%M UTC')"
-          # The schedule can overlap a manual push; rebase rather than fail.
-          git pull --rebase --autostash origin main
-          git push
-      - name: Check source health after publishing updates
-        env:
-          IPO_FETCH_OUTCOME: ${{ steps.fetch.outcome }}
-        run: node scripts/check-health.js
+      - name: Publish available enrichment
+        run: node scripts/publish-data.cjs extras

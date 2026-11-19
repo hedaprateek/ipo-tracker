@@ -16,6 +16,16 @@
   function freshness(stamp,now=Date.now(),maxAge=2*3600000){
     const age=now-Date.parse(stamp);return !Number.isFinite(age)||age< -300000?'unknown':age>maxAge?'stale':'current';
   }
+  function isRecord(value){return !!value&&typeof value==='object'&&!Array.isArray(value);}
+  function validSnapshot(key,data){
+    if(!isRecord(data)||data.ok===false||!Number.isFinite(Date.parse(data.fetchedAt))||!Array.isArray(data[key])||!data[key].length)return false;
+    return data[key].every(row=>isRecord(row)&&
+      (key==='ipos'?typeof row.company==='string'&&!!nameKey(row.company)&&
+        (row.categories==null||Array.isArray(row.categories)&&row.categories.every(isRecord))&&(row.info==null||isRecord(row.info))&&
+        (row.subscription==null||typeof row.subscription==='number'&&Number.isFinite(row.subscription)):
+        typeof row.name==='string'&&!!nameKey(row.name)&&typeof row.key==='string'&&!!row.key&&
+        typeof row.gmp==='number'&&Number.isFinite(row.gmp)));
+  }
   function marketDate(value=new Date()){
     const parts=new Intl.DateTimeFormat('en',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(value);
     const get=key=>parts.find(p=>p.type===key).value;return get('year')+'-'+get('month')+'-'+get('day');
@@ -101,5 +111,5 @@
     questions.push('Read business risks, customer concentration, fresh issue versus offer-for-sale and use of proceeds.');
     return {about:fund.about||null,facts,questions,uses,coverage:groups.filter(Boolean).length,pe,period:last?.period||null};
   }
-  return {nameKey,matchIssue,freshness,marketDate,needsSnapshotRefresh,categories,calendar,performance,research};
+  return {nameKey,matchIssue,freshness,isRecord,validSnapshot,marketDate,needsSnapshotRefresh,categories,calendar,performance,research};
 });

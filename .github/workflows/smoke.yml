@@ -18,6 +18,8 @@ jobs:
           node-version: '22'
       - name: Check pure calculations and parser fixtures
         run: node --test tests/*.test.cjs
+      - name: Verify matching browser asset versions
+        run: node scripts/stamp-assets.cjs --check
       - name: Locate Chrome
         run: echo "CHROME_PATH=$(which google-chrome || which chromium-browser)" >> "$GITHUB_ENV"
       - name: Check browser flows with a bounded session

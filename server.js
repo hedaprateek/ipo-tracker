@@ -30,11 +30,11 @@ const HISTORY_FILE = path.join(DATA_DIR, 'gmp-history.json');
 // ---------------------------------------------------------------- caching
 
 const cached = require('./lib/live-cache').createLiveCache({
+  validate:require('./js/core').validSnapshot,
   read(key) { try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, key+'.json'), 'utf8')); } catch { return null; } },
   write(key, snapshot) {
     const file = path.join(DATA_DIR, key+'.json');
-    fs.writeFileSync(file+'.tmp', JSON.stringify(snapshot));
-    fs.renameSync(file+'.tmp', file);
+    require('./lib/storage').writeJson(file,snapshot);
     if (key === 'gmp') writeHistory(sources.recordHistory(readHistory(), snapshot.gmp));
   },
 });
@@ -50,7 +50,7 @@ function readHistory() {
 function writeHistory(history) {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(HISTORY_FILE, JSON.stringify(history), 'utf8');
+    require('./lib/storage').writeJson(HISTORY_FILE,history);
   } catch (err) {
     console.warn('could not persist GMP history:', err.message);
   }

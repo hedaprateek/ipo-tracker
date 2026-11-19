@@ -13,6 +13,7 @@
 
 const fs = require('fs');
 const path = require('path');
+require('./stamp-assets.cjs').stamp();
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'dist');
