@@ -2,7 +2,8 @@ name: Check published website
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ['pages build and deployment']
+    # GitHub's generated Pages workflow name differs from its run display title.
+    workflows: ['pages-build-deployment']
     types: [completed]
   schedule:
     - cron: '23 * * * *'
