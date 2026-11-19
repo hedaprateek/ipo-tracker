@@ -122,7 +122,7 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
     assert.ok(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),'Home fits '+width);
     const shot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'home-'+width+'.png'),Buffer.from(shot.data,'base64'));
   }
-  stale=true;await evaluate(`localStorage.setItem('ipotracker.refreshDay',JSON.stringify('2000-01-01'))`);await send('Page.reload',{ignoreCache:true});await until(`!document.querySelector('#refresh').disabled&&document.querySelector('#data-health').textContent.includes('stale')`);
+  stale=true;await evaluate(`localStorage.setItem('ipotracker.refreshDay',JSON.stringify('2000-01-01'))`);await send('Page.reload',{ignoreCache:true});await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#data-health')?.textContent.includes('stale')`);
   assert.ok(dataRequests>requestsBeforeReload,'First visit on a different day fetches new data');
   assert.ok(await evaluate(`document.querySelector('#offline-banner').textContent.includes('GMP')`),'Stale GMP warning');
   assert.equal(await evaluate(`document.querySelector('#offline-banner').hidden`),false);
@@ -134,7 +134,7 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
     const key=require('../js/core').nameKey(row.company);await evaluate(`location.hash='ipo='+${JSON.stringify(key)}`);await until(`!!document.querySelector('.modal-backdrop')`);
     await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape'});await until(`!document.querySelector('.modal-backdrop')`);}
   stale=false;live=true;await evaluate(`localStorage.removeItem('ipotracker.refreshDay')`);await send('Page.reload',{ignoreCache:true});
-  await until(`!document.querySelector('#refresh').disabled&&document.querySelector('#mode').textContent.includes('Live local fetch')`);
+  await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#mode')?.textContent.includes('Live local fetch')`);
   await evaluate(`location.hash='ipo=browsercheckexample'`);await until(`!!document.querySelector('#modal-research')`);
   for(const width of [390,1440]){
     await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:width<600});
