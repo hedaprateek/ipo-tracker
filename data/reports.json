@@ -1,15 +1,1 @@
-{
- "ok": true,
- "updatedAt": "2026-11-19T16:44:08.995Z",
- "inputHealth": {
-  "ipos": "current",
-  "gmp": "current"
- },
- "inputTimes": {
-  "ipos": "2026-11-19T16:42:49.913Z",
-  "gmp": "2026-11-19T16:42:49.913Z"
- },
- "provider": null,
- "model": null,
- "reports": {}
-}
+{"ok":true,"updatedAt":"2026-11-19T19:29:27.236Z","inputHealth":{"ipos":"current","gmp":"current"},"inputTimes":{"ipos":"2026-11-19T19:28:04.655Z","gmp":"2026-11-19T19:28:04.655Z"},"provider":null,"model":null,"reports":{}}
