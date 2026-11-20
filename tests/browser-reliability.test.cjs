@@ -47,14 +47,19 @@ const quote=stamp=>({fetchedAt:stamp,gmp:[{name:'Example',key:'example',gmp:5}]}
 test('published data falls back to its own repository after an outage or a delayed deployment',async t=>{
   const current=quote(new Date().toISOString()),old=quote('2020-01-01T00:00:00Z');let primary=null,calls=[];
   t.mock.method(globalThis,'fetch',async url=>{
-    calls.push(url);const value=url.startsWith('https://raw.githubusercontent.com/')?current:primary;
+    calls.push(url);const value=url.startsWith(Core.DATA_API)?null:url.startsWith('https://raw.githubusercontent.com/')?current:primary;
     return value?{ok:true,json:async()=>value}:{ok:false,status:404};
   });
   assert.deepEqual(await delivery().publishedSnapshot('gmp'),current);
-  assert.deepEqual(calls,['data/gmp.json','https://raw.githubusercontent.com/hedaprateek/ipo-tracker/main/data/gmp.json']);
+  assert.deepEqual(calls,[Core.DATA_API+'/api/gmp','data/gmp.json','https://raw.githubusercontent.com/hedaprateek/ipo-tracker/main/data/gmp.json']);
   primary=old;calls=[];assert.deepEqual(await delivery().publishedSnapshot('gmp'),current);
-  primary=current;calls=[];await delivery().publishedSnapshot('gmp');assert.deepEqual(calls,['data/gmp.json']);
+  primary=current;calls=[];await delivery().publishedSnapshot('gmp');assert.deepEqual(calls,[Core.DATA_API+'/api/gmp','data/gmp.json']);
   primary=null;calls=[];await assert.rejects(delivery('localhost').publishedSnapshot('gmp'),/404/);assert.deepEqual(calls,['data/gmp.json']);
+});
+test('the public page requests current on-demand data before scheduled snapshots',async t=>{
+  const current=quote(new Date().toISOString()),calls=[];
+  t.mock.method(globalThis,'fetch',async url=>{calls.push(url);assert.equal(url,Core.DATA_API+'/api/gmp');return {ok:true,json:async()=>current};});
+  assert.deepEqual(await delivery().publishedSnapshot('gmp'),current);assert.equal(calls.length,1);
 });
 test('older publications cannot replace saved records; malformed saved times can recover',()=>{
   const current=quote(new Date().toISOString()),old=quote('2020-01-01T00:00:00Z');

@@ -127,9 +127,17 @@ const json = (u,timeout=12000,attempts=1) => Core.requestJson(u,{timeout,attempt
 
 async function publishedSnapshot(key){
   let snapshot,error;
-  try{snapshot=await json('data/'+key+'.json',6000,2);
-    if(!Core.validSnapshot(key,snapshot))throw Error('Invalid '+key+' snapshot');
-  }catch(e){error=e;snapshot=null;}
+  if(location.hostname==='hedaprateek.github.io')try{
+    const live=await json(Core.DATA_API+'/api/'+key,8000);
+    if(Core.validSnapshot(key,live)){
+      snapshot=live;
+      if(!live.sourceError&&Core.freshness(live.fetchedAt)==='current')return live;
+    }
+  }catch(e){error=e;}
+  try{const published=await json('data/'+key+'.json',6000,2);
+    if(!Core.validSnapshot(key,published))throw Error('Invalid '+key+' snapshot');
+    if(!snapshot||Date.parse(published.fetchedAt)>=Date.parse(snapshot.fetchedAt))snapshot=published;
+  }catch(e){error=e;}
   // The repository is the same publisher's second delivery path. It can also
   // recover a data commit that has not reached Pages yet. Never use public proxies.
   if((!snapshot||Core.freshness(snapshot.fetchedAt)!=='current'||Date.parse(snapshot.fetchedAt)<Date.parse(state.sourceTimes[key]))&&location.hostname==='hedaprateek.github.io'){
@@ -173,7 +181,7 @@ function setBusy(busy){
 
 const emptyText = (filtered) => state.loaded
   ? (filtered || 'Nothing matches these filters.')
-  : state.loadFailed?'Data is temporarily unavailable. Please try Refresh again.':'Loading…';
+  : state.loadFailed?'Market data is temporarily unavailable. We will check again automatically.':'Loading…';
 
 function setRefreshLabel(btn, wide, narrow){
   const w = $('.on-wide', btn);
@@ -183,20 +191,20 @@ function setRefreshLabel(btn, wide, narrow){
   btn.setAttribute('aria-label', wide);
 }
 
-async function refresh({force=false}={}){
+async function refresh({force=false,background=false}={}){
   if(state.refreshing)return;
   state.refreshing=true;
-  try { await refreshData(force);if(state.loaded)save(LS.refreshDay,todayISO()); }
+  try { await refreshData(force,background);if(state.loaded)save(LS.refreshDay,todayISO()); }
   catch(error){toast('Refresh failed. Keeping the last available data.');console.warn(error);}
   finally{state.refreshing=false;state.lastChecked=Date.now();$('#refresh').disabled=false;setRefreshLabel($('#refresh'),'Refresh','↻');setBusy(false);}
 }
-async function refreshData(force){
+async function refreshData(force,background=false){
   const btn = $('#refresh');
   btn.disabled = true;
   // Swap only the wide label — overwriting textContent would destroy the
   // narrow-screen glyph and force the full word back onto a phone header.
   setRefreshLabel(btn, 'Refreshing…', '⟳');
-  setBusy(true);
+  if(!background||!state.loaded)setBusy(true);
 
   if(force)state.mode=null;
   const mode = await detectMode();state.fromSaved=false;
@@ -261,6 +269,8 @@ async function refreshData(force){
 
   state.sourceTimes.market=state.market.fetchedAt;
   if(mode==='static'&&healthRes.status==='fulfilled')for(const key of ['ipos','gmp']){
+    const result=key==='ipos'?ipoRes:gmpRes;
+    if(result.status==='fulfilled'&&['live','cache'].includes(result.value?.delivery)&&!result.value.sourceError)continue;
     const health=healthRes.value?.sources?.[key];
     if(health?.status==='failed'&&Date.parse(health.lastAttempt)>=Date.parse(state.sourceTimes[key]||0))state.sourceErrors[key]=true;
   }
@@ -290,18 +300,19 @@ function updateFreshness(){
   const labels={ipos:'IPO details / bids',gmp:'GMP',market:'Index screen'};
   $('#data-health').innerHTML=Object.keys(labels).map(key=>{
     const status=sourceState(key),stamp=state.sourceTimes[key];
-    return '<span data-source="'+key+'" class="health '+status+'"><b>'+labels[key]+'</b> '+(stamp?esc(relativeTime(stamp)):'not available')+' · '+status+'</span>';
+    return '<span data-source="'+key+'" class="health '+status+'"><b>'+labels[key]+'</b> '+(stamp?esc(quoteTime(stamp)):'not available')+' · '+status+'</span>';
   }).join('');
   const problem=['ipos','gmp'].some(key=>sourceState(key)!=='current');
-  $('#statusbar').classList.toggle('has-error',problem);
-  $('#mode').textContent=(state.fromSaved?'Saved on this device':state.mode==='server'?'Live local fetch':'Published snapshot')+' · '+(problem?'Stale / unavailable figures · use Refresh':'view source update times');
-  ['ipos','gmp'].forEach(key=>{$(key==='ipos'?'#src-ipo':'#src-gmp').textContent=(key==='ipos'?(state.sourceProviders.ipos==='ipowatch'?'IPO Watch IPOs (backup)':'NSE IPOs'):'IPO Watch GMP')+' · '+sourceState(key)+' · '+(state.sourceTimes[key]||'unknown timestamp');});
+  $('#statusbar').classList.remove('has-error');
+  $('#mode').textContent=problem?'Showing last reported figures · source details':'Source details and update times';
+  ['ipos','gmp'].forEach(key=>{$(key==='ipos'?'#src-ipo':'#src-gmp').textContent=(key==='ipos'?(state.sourceProviders.ipos==='ipowatch'?'IPO Watch IPOs':'NSE IPOs'):'IPO Watch GMP')+' · '+sourceState(key)+' · '+(state.sourceTimes[key]||'unknown timestamp');});
 }
 function showBanner(){
-  const bad=['ipos','gmp'].filter(key=>sourceState(key)!=='current');
-  const backup=state.sourceProviders.ipos==='ipowatch'&&state.sourceWarnings.ipos;
-  $('#offline-banner').hidden=!bad.length&&!backup&&!state.sourceWarnings.categories;
-  $('#offline-banner').textContent=(bad.length?bad.map(key=>key==='ipos'?'IPO details / bids':'GMP').join(' and ')+' data is stale, unavailable or failed to refresh. Old GMP is excluded from current calculations. Verify dates and figures at the source. ':'')+(backup?'Using IPO Watch for IPO details and bids while NSE is unavailable. Source dates are shown in each IPO detail. ':'')+(state.sourceWarnings.categories||'');
+  const delayed=['ipos','gmp'].some(key=>sourceState(key)!=='current');
+  $('#offline-banner').hidden=!delayed;
+  $('#offline-banner').textContent=state.loaded
+    ?'Showing the last reported figures with their dates. Updates are checked automatically; you can keep using this page.'
+    :state.loadFailed?'Market data is temporarily unavailable. This page will check again automatically.':'Connecting to market data…';
 }
 
 // ----------------------------------------------------------------- merging
@@ -375,7 +386,7 @@ function allIpos(){
       listing: ipo.listing || null,
       source:ipo.source||'nse',sourceUrl:ipo.sourceUrl||null,sourceFetchedAt:ipo.sourceFetchedAt||(ipo.archived?null:state.sourceTimes.ipos),
       subscriptionAsOf:ipo.subscriptionAsOf||null,archived:!!ipo.archived,
-      gmp: g?.gmp ?? null, trend: g?.trend ?? null,
+      gmp: g?.gmp ?? null, trend: g?.trend ?? null,gmpUpdated:g?.updated||null,
       estGainPct: g?.estGainPct ?? null, price: g?.price ?? null,
       hasNse: ipo.source!=='ipowatch',statusHint:ipo.statusHint,
     };
@@ -391,7 +402,7 @@ function allIpos(){
       priceBand: g.price ? '₹'+g.price : null, issueSize:null,
       subscription:null, categories:null, info:null, listing:null,
       source:'ipowatch',sourceUrl:g.page||null,sourceFetchedAt:state.sourceTimes.gmp,
-      gmp:g.gmp, trend:g.trend, estGainPct:g.estGainPct, price:g.price,
+      gmp:g.gmp, trend:g.trend, estGainPct:g.estGainPct, price:g.price,gmpUpdated:g.updated||null,
       hasNse:false, statusHint:g.status,
     });
   }
@@ -404,8 +415,8 @@ function allIpos(){
 
   return rows.map((r) => ({
     ...r,
-    gmp:sourceState('gmp')==='current'?r.gmp:null,
-    trend:sourceState('gmp')==='current'?r.trend:null,
+    gmp:r.gmp,
+    trend:r.trend,
     estGainPct:sourceState('gmp')==='current'?r.estGainPct:null,
     gmpSourceState:sourceState('gmp'),
     allotmentDate: allotmentOf(r.key),
@@ -414,7 +425,7 @@ function allIpos(){
       return d ? d <= t : null;
     })(),
     status: (r.start || r.end) ? classify(r) : (r.statusHint || 'upcoming'),
-    gmpPct: (sourceState('gmp')==='current' && r.gmp !== null && (capPrice(r)||r.price)) ? (r.gmp / (capPrice(r)||r.price)) * 100 : null,
+    gmpPct: (r.gmp !== null && (capPrice(r)||r.price)) ? (r.gmp / (capPrice(r)||r.price)) * 100 : null,
     report: state.reports[r.key]?.report || null,
     reportMeta: state.reports[r.key] || null,
   }));
@@ -1286,6 +1297,17 @@ const signed = (n, digits = 1) =>
 
 const moveClass = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
 
+function reportedGmp(r){
+  const stamp=r.gmpUpdated||(state.sourceTimes.gmp?quoteTime(state.sourceTimes.gmp):null);
+  return stamp?'Reported '+stamp:'Source date unavailable';
+}
+function gmpQuote(r){
+  if(r.gmp==null)return '<span class="quote-missing">Not reported</span>';
+  return '<span class="quote-value '+moveClass(r.gmp)+'">'+money(r.gmp)+'</span>'+
+    (r.gmpPct==null?'':'<span class="quote-change">'+signed(r.gmpPct)+' of issue price</span>')+
+    '<small class="quote-date">'+esc(reportedGmp(r))+'</small>';
+}
+
 /**
  * The bottom line of a card. Once an issue has listed, its grey market premium
  * is history — what matters is where it opened and where it trades now, so
@@ -1320,7 +1342,7 @@ function bottomLine(r){
     <span class="gmpval ${moveClass(r.gmpPct ?? r.gmp)}">${
       r.gmpPct !== null ? signed(r.gmpPct) : money(r.gmp)}</span>
     <span class="gain">${r.gmpPct !== null
-      ? `implied gain · ${money(r.gmp)} GMP`
+      ? `${sourceState('gmp')==='current'?'Reported premium':'Last reported premium'} · ${money(r.gmp)} GMP`
       : 'GMP'}</span>
     ${sparkline(r.histKey)}
   </div>`;
@@ -1366,7 +1388,7 @@ function card(r,t){
   return `<article class="card research-card ${r.status}" data-open="${esc(r.key)}" tabindex="0">
     <div class="research-card-top"><span class="tag">${esc(r.board)}</span><span class="sub">${timingText(r,t)}</span></div>
     <h3>${esc(r.name)}</h3><p class="business-intro">${esc(brief.about?brief.about.slice(0,205)+(brief.about.length>205?'…':''):'Company profile is not available yet. Read the offer document before forming a view.')}</p>
-    <div class="research-metrics"><div><span>GMP · unofficial</span><b class="${r.gmp==null?'':moveClass(r.gmp)}">${money(r.gmp)}</b><small>${r.gmpPct==null?esc(r.gmpSourceState==='current'?'No quote available':'Stale / unavailable'):percentText(r.gmpPct)+' of issue price'}</small></div>
+    <div class="research-metrics"><div><span>GMP · unofficial</span><b class="${r.gmp==null?'':moveClass(r.gmp)}">${money(r.gmp)}</b><small>${r.gmpPct==null?'Not reported':percentText(r.gmpPct)+' of issue price'} · ${esc(reportedGmp(r))}</small></div>
       <div><span>Minimum entry</span><b>${entry?inr(entry.amount):'Not available'}</b><small>${entry?entry.lots+' lot(s) · verify eligibility':'Issue terms missing'}</small></div></div>
     <div class="evidence-pills">${facts.map(fact=>`<span class="${fact.kind}">${esc(fact.title)}</span>`).join('')||'<span>Financial data incomplete</span>'}</div>
     <div class="research-card-foot"><span>${brief.coverage}/4 research data groups</span>${decision?'<span class="your-view">Your view: '+esc(decision.status)+'</span>':''}</div>
@@ -1544,8 +1566,8 @@ function renderCompare(rows, t){
     <div class="chart-card">
       <div class="chart-head">
         <div class="grow">
-          <h4>All ${rows.length} side by side</h4>
-          <p class="chart-note">The cheapest way into each, and what that buys.
+          <h4>Open IPOs at a glance</h4>
+          <p class="chart-note">Reported GMP, demand and the minimum application.
             ${budget ? 'Rows beyond your budget are dimmed.' : ''}</p>
         </div>
         <label class="budget">Budget ₹
@@ -1557,7 +1579,7 @@ function renderCompare(rows, t){
         <table class="compare-table">
           <thead><tr>
             <th>IPO</th><th>Closes</th>
-            <th>Individual entry</th><th>Entry category</th><th>GMP</th>
+            <th>Minimum application</th><th>GMP · unofficial</th><th>Subscription</th>
           </tr></thead>
           <tbody>${items.map((it) => compareRow(it, t)).join('')}</tbody>
         </table>
@@ -1588,17 +1610,13 @@ function compareRow({ r, opts, rec, retail, affordable }, t){
   return `<tr class="clickable ${affordable ? '' : 'over-budget'}" data-open="${esc(r.key)}">
     <td class="name">${esc(r.name)}${r.board === 'SME' ? ' <span class="tag">SME</span>' : ''}</td>
     <td data-label="Closes" class="${days === 0 ? 'urgent' : ''}">${closes}</td>
-    <td data-label="Individual entry">${noData
+    <td data-label="Minimum application">${noData
       ? `<span class="muted">${noData}</span>`
       : retail
-        ? `${inr(retail.amount)}<span class="sub2"> · ${odds(retail.times)}</span>`
+        ? `<b>${inr(retail.amount)}</b><span class="sub2">${esc(retail.label)} · ${retail.lots} lot${retail.lots===1?'':'s'}</span>`
         : '—'}</td>
-    <td data-label="Entry category">${noData ? '<span class="muted">—</span>'
-      : best
-        ? `<b>${esc(best.label.replace(/ \(.*\)/, ''))}</b> ${inr(best.amount)}<span class="sub2"> · ${odds(best.times)}</span>`
-        : `<span class="muted">lowest entry amount</span>`}</td>
-    <td data-label="GMP" class="${r.gmpPct === null ? '' : moveClass(r.gmpPct)}">${
-      r.gmpPct === null ? '—' : signed(r.gmpPct)}</td>
+    <td data-label="GMP">${gmpQuote(r)}</td>
+    <td data-label="Subscription">${r.subscription==null?'Not reported':'<b>'+r.subscription.toFixed(2)+'×</b><span class="sub2">Overall demand</span>'}</td>
   </tr>`;
 }
 
@@ -1654,36 +1672,32 @@ function todayCard(r, t){
           <span class="${days === 0 ? 'urgent' : ''}">${urgency}</span>
           · ${esc(r.priceBand || 'band not announced')}
           ${r.subscription != null ? ` · ${r.subscription.toFixed(2)}× overall` : ''}
-          ${r.gmp !== null ? ` · GMP ${money(r.gmp)}${r.gmpPct !== null ? ` (${signed(r.gmpPct)})` : ''}` : ''}
         </div>
       </div>
       ${r.report&&reportIsCurrent(r) ? verdictChip(r.report) : ''}
     </div>
 
+    <div class="today-metrics">
+      <div><span>GMP · unofficial</span>${gmpQuote(r)}</div>
+      <div><span>Overall subscription</span><b>${r.subscription==null?'Not reported':r.subscription.toFixed(2)+'×'}</b><small>Bid demand · checked ${esc(relativeTime(state.sourceTimes.ipos))}</small></div>
+      <div><span>Minimum application</span><b>${opts[0]?inr(opts[0].amount):'Terms awaited'}</b><small>${opts[0]?esc(opts[0].label)+' · '+opts[0].lots+' lot'+(opts[0].lots===1?'':'s'):'Lot size or price not reported'}</small></div>
+    </div>
     ${rec ? `<div class="verdict-line">
-      <span class="pick">Entry category <b>${esc(rec.pick.label)}</b></span>
-      <span class="why">${esc(rec.why)}</span>
+      <span class="pick">Category bids</span>
+      <span class="why">${r.subscriptionAsOf?'Reported '+fmtDate(r.subscriptionAsOf):'Category figures not reported yet'}. Subscription is demand, not allotment odds.</span>
     </div>` : `<div class="verdict-line">
       <span class="why">${esc(noRecReason(r, opts))}</span>
     </div>`}
 
     ${opts.length ? `<table class="cat-table">
       <thead><tr><th>Category</th><th>Minimum</th>
-        <th>${hasTimes ? 'Subscribed' : 'Applications'}</th>
-        <th>${hasTimes ? 'Subscription context' : 'Share of applicants'}</th></tr></thead>
+        <th>Subscribed</th><th>Reported date</th></tr></thead>
       <tbody>${opts.map((o) => `
         <tr class="${best && o.key === best.key ? 'best' : ''}">
           <td class="name">${esc(o.label)}</td>
           <td data-label="Minimum">${inr(o.amount)}<span class="lots"> · ${o.lots} lot${o.lots === 1 ? '' : 's'}</span></td>
-          <td data-label="${hasTimes ? 'Subscribed' : 'Applications'}">${hasTimes
-            ? (o.times === null ? '—' : o.times.toFixed(2) + '×')
-            : (o.applications === null ? '—' : o.applications.toLocaleString('en-IN'))}</td>
-          <td data-label="${hasTimes ? 'Subscription context' : 'Share of applicants'}">${hasTimes
-            ? (o.times === null ? '—'
-               : o.times <= 1 ? 'bidding snapshot'
-               : 'not a probability')
-            : (o.applications === null || !totalApps ? '—'
-               : `${((o.applications / totalApps) * 100).toFixed(1)}% of applicants`)}</td>
+          <td data-label="Subscribed">${o.times==null?'Not reported':o.times.toFixed(2)+'×'}</td>
+          <td data-label="Reported date">${o.times==null?'Awaiting source':r.subscriptionAsOf?fmtDate(r.subscriptionAsOf):'Date not provided'}</td>
         </tr>`).join('')}</tbody>
     </table>` : ''}
 
@@ -2357,7 +2371,7 @@ function aiPrompt(rows){
     }
     if (r.subscription != null) lines.push(`- Overall subscription: ${r.subscription.toFixed(2)}x`);
     if (r.categories?.length){
-      lines.push('- Category-wise subscription:');
+      lines.push('- Category-wise subscription'+(r.subscriptionAsOf?' (reported '+r.subscriptionAsOf+')':'')+':');
       for (const c of r.categories){
         lines.push(c.times != null
           ? `    - ${c.label}: ${c.times.toFixed(2)}x subscribed`
@@ -2398,7 +2412,7 @@ function aiPrompt(rows){
     if (r.gmp !== null){
       lines.push(`- Grey market premium: ₹${r.gmp}` +
         (r.gmpPct !== null ? ` (${signed(r.gmpPct)} of issue price)` : '') +
-        ' — unofficial, treat as sentiment only');
+        ' — unofficial, treat as sentiment only; '+reportedGmp(r));
     } else {
       lines.push('- Grey market premium: none quoted');
     }
@@ -3319,6 +3333,13 @@ window.dispatchEvent(new Event('ipo:ready'));
 showBanner();
 if(!savedIposValid||!savedGmpValid||Core.needsSnapshotRefresh(snap,load(LS.refreshDay,null)))refresh({force:true}).then(routeFromHash);
 else routeFromHash();
+
+function checkInBackground(){
+  if(document.visibilityState==='visible'&&!state.refreshing&&Date.now()-(state.lastChecked||0)>90000)refresh({background:true});
+}
+setInterval(checkInBackground,120000);
+document.addEventListener('visibilitychange',checkInBackground);
+window.addEventListener('online',()=>refresh({background:true}));
 
 if('serviceWorker' in navigator&&window.isSecureContext){
   navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(()=>{});

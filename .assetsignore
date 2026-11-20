@@ -11,6 +11,9 @@ node_modules/
 
 # Server-side: the scheduled fetch, the local dev server, and their shared code.
 lib/
+worker/
+.wrangler/
+wrangler.live.jsonc
 scripts/
 server.js
 

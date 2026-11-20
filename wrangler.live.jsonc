@@ -1,0 +1,9 @@
+{
+  "name": "ipo-tracker-data",
+  "account_id": "e502481b7b665526ecf3121456aa137a",
+  "main": "worker/live.mjs",
+  "compatibility_date": "2026-11-20",
+  "workers_dev": true,
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "observability": { "enabled": true }
+}

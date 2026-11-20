@@ -23,7 +23,7 @@
 <meta name="twitter:description" content="Indian IPOs with live grey market premium, category-wise allotment odds, and a record of how often the premium was right." />
 <meta name="twitter:image" content="https://hedaprateek.github.io/ipo-tracker/og.png" />
 
-<link rel="stylesheet" href="styles.css?v=80490b762e9a" />
+<link rel="stylesheet" href="styles.css?v=aa731672a9a0" />
 <link rel="manifest" href="manifest.webmanifest" />
 <meta name="theme-color" content="#f4f5f7" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%88%3C/text%3E%3C/svg%3E" />
@@ -76,6 +76,7 @@
 <details class="statusbar" id="statusbar">
   <summary><span id="mode"></span><span class="chev" aria-hidden="true">›</span></summary>
   <div class="statusbar-body">
+    <div id="data-health" class="data-health" role="status"></div>
     <span id="src-ipo">IPOs —</span>
     <span id="src-gmp">GMP —</span>
     <span id="src-report">AI reports —</span>
@@ -92,7 +93,6 @@
 
 <main>
   <div id="offline-banner" class="banner" hidden></div>
-  <div id="data-health" class="data-health" role="status"></div>
   <section id="tab-home">
     <div class="home-hero"><span class="eyebrow">Business first. GMP second.</span><h2>Understand the IPO.<br>Then make your call.</h2>
       <p>Know the company, question the valuation and separate market excitement from reported facts.</p>
@@ -122,7 +122,6 @@
 
   <!-- Copy the scoped subscription brief or take it to an external AI. -->
   <section id="tab-today" hidden>
-    <p class="note">Compare retail and other application categories, copy the figures, or check them with your preferred AI. Figures are dated snapshots; use Refresh for the latest available data.</p>
     <div class="today-head">
       <div class="grow">
         <h2 id="today-title">Today</h2>
@@ -459,9 +458,9 @@
   window.addEventListener('ipo:ready',function(){ready=true;clearTimeout(timer);panel.hidden=true;});
 })();
 </script>
-<script src="js/core.js?v=eb31593bc0b4"></script>
+<script src="js/core.js?v=f52a16ba9c48"></script>
 <script src="js/charts.js?v=236859d4d8f5"></script>
-<script src="js/app.js?v=e9963b3eea1e"></script>
+<script src="js/app.js?v=48bb8fed9584"></script>
 
 <div class="stunity-credit" id="stunityCredit"><span class="sc-dot"></span><span>Stunity Tech — by <b>Prateek</b></span></div>
 </body>

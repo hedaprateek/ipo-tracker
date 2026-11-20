@@ -50,8 +50,8 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await send('Page.navigate',{url:base});await until(`!!document.querySelector('#home-results .card')&&!document.querySelector('#refresh').disabled`);
   assert.equal(await evaluate(`document.querySelector('#tab-home').hidden`),false,'Home landing');
-  assert.ok(await evaluate(`document.querySelector('#src-ipo').textContent.includes('IPO Watch IPOs (backup)')`),'Backup provider is accurately labelled');
-  assert.ok(await evaluate(`document.querySelector('#offline-banner').textContent.includes('Using IPO Watch')`),'NSE outage is explained while current backup data is available');
+  assert.ok(await evaluate(`document.querySelector('#src-ipo').textContent.includes('IPO Watch IPOs')`),'The actual provider is accurately labelled');
+  assert.ok(await evaluate(`document.querySelector('#offline-banner').hidden`),'Working data does not show a provider-outage warning');
   const rows=[];
   for(const tab of ['home','performance','ipos','today','ai','gmp','allot','more','corp','market','cal']){
     const visible=tab==='ipos'?'home':tab==='ai'?'today':tab;
@@ -149,9 +149,19 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   await evaluate(`const older=JSON.parse(localStorage.getItem('ipotracker.snapshot'));older.sourceTimes.gmp='2020-01-01T00:00:00Z';localStorage.setItem('ipotracker.snapshot',JSON.stringify(older));localStorage.setItem('ipotracker.refreshDay',JSON.stringify('2000-01-01'));`);
   await send('Page.reload',{ignoreCache:true});await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#data-health')?.textContent.includes('stale')`);
   assert.ok(dataRequests>requestsBeforeReload,'First visit on a different day fetches new data');
-  assert.ok(await evaluate(`document.querySelector('#offline-banner').textContent.includes('GMP')`),'Stale GMP warning');
+  assert.ok(await evaluate(`document.querySelector('#offline-banner').textContent.includes('last reported')`),'One calm message explains dated figures');
   assert.equal(await evaluate(`document.querySelector('#offline-banner').hidden`),false);
-  assert.ok(await evaluate(`!document.querySelector('#home-results').textContent.includes('implied gain')`),'Stale GMP not used');
+  assert.ok(await evaluate(`!document.querySelector('#home-results').textContent.includes('implied gain')`),'Older GMP is not presented as a current implied gain');
+  await evaluate(`location.hash='today';document.querySelector('[data-todayboard="Mainboard"]').click()`);
+  await until(`!document.querySelector('#tab-today').hidden&&!!document.querySelector('#today-compare .quote-value')`);
+  assert.ok(await evaluate(`document.querySelector('#today-compare').textContent.includes('₹10')&&document.querySelector('#today-compare').textContent.includes('Reported')`),'Dated GMP remains visible in the exact AI tools comparison view');
+  assert.ok(await evaluate(`!document.querySelector('#statusbar').open&&!document.querySelector('#tab-today').textContent.includes('use Refresh')`),'Diagnostics stay collapsed and the view does not ask visitors to refresh');
+  for(const width of [390,1440]){
+    await send('Emulation.setDeviceMetricsOverride',{width,height:960,deviceScaleFactor:1,mobile:width<600});
+    assert.ok(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),'Dated comparison fits '+width);
+    const shot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'ai-tools-delayed-'+width+'.png'),Buffer.from(shot.data,'base64'));
+  }
+  await evaluate(`location.hash='home'`);
   assert.ok(await evaluate(`JSON.parse(localStorage.getItem('ipotracker.watch')).length===1`),'Watchlist survives reload');
   assert.ok(await evaluate(`Object.values(JSON.parse(localStorage.getItem('ipotracker.decisions'))).some(d=>d.note==='Check cash flow before deciding')`),'Research notebook survives reload');
   const ipo=JSON.parse(fs.readFileSync(path.join(root,'data/ipos.json'),'utf8')).ipos;
@@ -159,7 +169,7 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
     const key=require('../js/core').nameKey(row.company);await evaluate(`location.hash='ipo='+${JSON.stringify(key)}`);await until(`!!document.querySelector('.modal-backdrop')`);
     await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape'});await until(`!document.querySelector('.modal-backdrop')`);}
   stale=false;live=true;await evaluate(`localStorage.removeItem('ipotracker.refreshDay')`);await send('Page.reload',{ignoreCache:true});
-  await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#mode')?.textContent.includes('Live local fetch')`);
+  await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('[data-source="gmp"]')?.textContent.includes('current')`);
   await evaluate(`location.hash='ipo=browsercheckexample'`);await until(`!!document.querySelector('#modal-research')`);
   for(const width of [390,1440]){
     await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:width<600});
@@ -214,5 +224,5 @@ const watchdog=setTimeout(()=>{console.error('Browser check exceeded 90 seconds'
   await send('Page.reload',{ignoreCache:true});
   await until(`document.querySelector('#refresh')?.disabled===false&&document.querySelector('#home-results')?.textContent.includes('temporarily unavailable')`);
   assert.ok(await evaluate(`Object.values(JSON.parse(localStorage.getItem('ipotracker.decisions'))).some(d=>d.note==='Check cash flow before deciding')`),'Cold-start outage preserves personal notes');
-  assert.deepEqual(errors,[]);console.log('PASS: '+rows.length+' views, saved-data and malformed-response recovery, older-publication protection, corrupt settings, older-browser support, offline page reload, missing-script recovery, optional and total outages, cold-start recovery, source labels, mobile/desktop scrolling, detail refresh, notes, watchlist, comparison, applications, masked IDs, calendar download and stale GMP exclusion.');
+  assert.deepEqual(errors,[]);console.log('PASS: '+rows.length+' views, saved-data and malformed-response recovery, dated GMP visible in AI tools on mobile/desktop, quiet source status, older-publication protection, corrupt settings, older-browser support, offline page reload, missing-script recovery, optional and total outages, cold-start recovery, notes, watchlist, comparison, applications, masked IDs and calendar download.');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{clearTimeout(watchdog);socket?.close();chrome?.kill();server.close();server.closeAllConnections();});

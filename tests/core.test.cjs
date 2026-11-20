@@ -12,8 +12,9 @@ test('market calendar dates follow India across UTC midnight regardless of host 
 
 test('visits revalidate old, failed or migrated snapshots even on the same India date',()=>{
   const now=Date.parse('2026-11-18T10:00:00Z'),day='2026-11-18';
-  const snapshot={version:3,sourceTimes:{ipos:'2026-11-18T09:30:00Z',gmp:'2026-11-18T09:30:00Z'},sourceErrors:{}};
+  const snapshot={version:3,at:now,sourceTimes:{ipos:'2026-11-18T09:30:00Z',gmp:'2026-11-18T09:30:00Z'},sourceErrors:{}};
   assert.equal(Core.needsSnapshotRefresh(snapshot,day,now),false);
+  assert.equal(Core.needsSnapshotRefresh({...snapshot,at:now-91000},day,now),true);
   assert.equal(Core.needsSnapshotRefresh({...snapshot,version:2},day,now),true);
   assert.equal(Core.needsSnapshotRefresh({...snapshot,sourceTimes:{...snapshot.sourceTimes,ipos:'2026-11-13T09:30:00Z'}},day,now),true);
   assert.equal(Core.needsSnapshotRefresh({...snapshot,sourceErrors:{ipos:true}},day,now),true);

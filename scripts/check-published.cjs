@@ -10,6 +10,8 @@ async function checkPublished({base='https://hedaprateek.github.io/ipo-tracker/'
     const url=new URL(file,origin);url.searchParams.set('healthcheck',String(now));
     return read(url.href,{format,timeout:8000});
   });
+  const live=key=>(load?get('live/'+key):read(Core.DATA_API+'/api/'+key,{timeout:10000})).catch(()=>null);
+  const liveJobs=Promise.all([live('ipos'),live('gmp')]);
   const [html,css,app,core,charts,worker,ipos,gmp,health]=await Promise.all([
     get('','text'),get('styles.css','text'),get('js/app.js','text'),get('js/core.js','text'),get('js/charts.js','text'),
     get('sw.js','text'),
@@ -26,20 +28,24 @@ async function checkPublished({base='https://hedaprateek.github.io/ipo-tracker/'
     if(!reference||reference[1]!==createHash('sha256').update(source).digest('hex').slice(0,12))throw Error('Published asset version mismatch: '+file);
   }
   const warnings=[],sources={};
+  const [liveIpos,liveGmp]=await liveJobs;
+  let backupNeedsRefresh=false;
   if(!Core.isRecord(health?.sources)||['ipos','gmp'].some(key=>!['ok','failed'].includes(health.sources[key]?.status)))throw Error('Published source-health report is malformed');
-  for(const [key,data] of [['ipos',ipos],['gmp',gmp]]){
-    if(!Core.validSnapshot(key,data))throw Error(`Published ${key} snapshot is malformed or empty`);
+  for(const [key,backup,fresh] of [['ipos',ipos,liveIpos],['gmp',gmp,liveGmp]]){
+    if(!Core.validSnapshot(key,backup))throw Error(`Published ${key} snapshot is malformed or empty`);
+    if(Core.freshness(backup.fetchedAt,now)!=='current')backupNeedsRefresh=true;
+    const data=Core.validSnapshot(key,fresh)&&Date.parse(fresh.fetchedAt)>=Date.parse(backup.fetchedAt)?fresh:backup;
     const status=Core.freshness(data.fetchedAt,now),age=now-Date.parse(data.fetchedAt);
     if(status==='unknown'||age>6*3600000){
       const error=Error(`Published ${key} data is critically stale: ${data.fetchedAt}`);error.refreshNeeded=true;throw error;
     }
     const source=health?.sources?.[key];
-    sources[key]={status,updated:data.fetchedAt,provider:data.provider||source?.provider||'unknown',records:data[key].length};
+    sources[key]={status,updated:data.fetchedAt,provider:data.provider||source?.provider||'unknown',records:data[key].length,delivery:data===fresh?'on-demand':'published backup'};
     if(status!=='current')warnings.push(`${key} data is stale; saved figures remain available`);
-    if(source?.status==='failed')warnings.push(`${key} refresh failed; saved figures remain available`);
-    if(source?.componentError)warnings.push(`${key} category feed: ${source.componentError}`);
+    if(data.sourceError||data===backup&&source?.status==='failed')warnings.push(`${key} refresh failed; saved figures remain available`);
+    if(data===backup&&source?.componentError)warnings.push(`${key} category feed: ${source.componentError}`);
   }
-  return {url:base,sources,warnings,refreshNeeded:Object.values(sources).some(source=>source.status!=='current')};
+  return {url:base,sources,warnings,refreshNeeded:backupNeedsRefresh||Object.values(sources).some(source=>source.status!=='current')};
 }
 
 if(require.main===module){

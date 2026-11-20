@@ -64,10 +64,10 @@ test('backup replaces active facts, preserves dated archives and removes obsolet
   assert.equal(Core.categories(rows[0])[0].amount,14960);
 });
 
-test('old category observations are not carried into current bidding figures',()=>{
+test('previous-day category observations keep their date and do not replace the newer overall subscription',()=>{
   const old=[{ipoId:1149,subscriptionList:bids.filter(row=>row.subscriptionDate==='2026-11-17')}];
   const row=watch.mergeIpos(watch.parseListing(listing),old,[],{now})[0];
-  assert.deepEqual(row.categories,[]);assert.equal(row.subscription,1.16);assert.equal(row.subscriptionAsOf,null);
+  assert.equal(row.categories[0].times,999);assert.equal(row.subscription,1.16);assert.equal(row.subscriptionAsOf,'2026-11-17');
 });
 
 test('blocked NSE falls back to public IPO details and rejects an empty backup',async t=>{

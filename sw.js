@@ -1,9 +1,9 @@
 /* Cache one complete release so repeat visits can open during a network outage.
  * Data remains network-only: the app validates and dates its saved snapshots. */
 'use strict';
-const VERSION = "15aa424135d2e412";
-const SHELL = ["index.html","styles.css?v=80490b762e9a","js/core.js?v=eb31593bc0b4","js/charts.js?v=236859d4d8f5","js/app.js?v=e9963b3eea1e"];
-const INTEGRITY = {"index.html":"sha256-FapCQTXS5BIbzk8PTHfqTcZCutW2hW5i5EXpCd/A4Jk=","styles.css?v=80490b762e9a":"sha256-gEkLdi6alks0LLiuUvmuNxEVyzYXvysTgix0n8rZC4Y=","js/core.js?v=eb31593bc0b4":"sha256-6zFZO8C0QyM2bbiC3eWwYTJXpHfT6FD70WjzpAk7HyY=","js/charts.js?v=236859d4d8f5":"sha256-I2hZ1Nj1RFhu6bbbZfSzeYPEUxevm1Mzplvm6NfUjb4=","js/app.js?v=e9963b3eea1e":"sha256-6ZY7PuoecG1bjKTLkq5wOPqnZMQmsB697jych3TOdr4="};
+const VERSION = "01ddbfc4d854e88e";
+const SHELL = ["index.html","styles.css?v=aa731672a9a0","js/core.js?v=f52a16ba9c48","js/charts.js?v=236859d4d8f5","js/app.js?v=48bb8fed9584"];
+const INTEGRITY = {"index.html":"sha256-Ad2/xNhU6I7azhG/94/Ay5Ber7Ihh+E0izABnHmv+j8=","styles.css?v=aa731672a9a0":"sha256-qnMWcqmgP+lORU/P4FTMmw/dbKYL0uQ4Y4fl7rYNctc=","js/core.js?v=f52a16ba9c48":"sha256-9SoWupxITpnp8JgPdkJn6XmIFx9MESi5k+xRJK/0Z0I=","js/charts.js?v=236859d4d8f5":"sha256-I2hZ1Nj1RFhu6bbbZfSzeYPEUxevm1Mzplvm6NfUjb4=","js/app.js?v=48bb8fed9584":"sha256-SLuP7ZWErKl7TbEEWg8pVHw2Me9g7oovdVckLVo4BqM="};
 const ROOT = new URL('./',self.location.href);
 const PREFIX = 'ipo-shell:'+ROOT.pathname+':';
 const CACHE = PREFIX+VERSION;

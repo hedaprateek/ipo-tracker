@@ -61,6 +61,7 @@
   }
   function needsSnapshotRefresh(snapshot,lastRefreshDay,now=Date.now()){
     if(!snapshot || snapshot.version!==3 || lastRefreshDay!==marketDate(new Date(now)))return true;
+    if(!Number.isFinite(snapshot.at)||now-snapshot.at>90000)return true;
     return ['ipos','gmp'].some(key=>snapshot.sourceErrors?.[key] || freshness(snapshot.sourceTimes?.[key],now)!=='current');
   }
   function categories(row){
@@ -140,5 +141,5 @@
     questions.push('Read business risks, customer concentration, fresh issue versus offer-for-sale and use of proceeds.');
     return {about:fund.about||null,facts,questions,uses,coverage:groups.filter(Boolean).length,pe,period:last?.period||null};
   }
-  return {nameKey,matchIssue,freshness,isRecord,storedValue,requestJson,validSnapshot,marketDate,needsSnapshotRefresh,categories,calendar,performance,research};
+  return {DATA_API:'https://ipo-tracker-data.hedaprateek.workers.dev',nameKey,matchIssue,freshness,isRecord,storedValue,requestJson,validSnapshot,marketDate,needsSnapshotRefresh,categories,calendar,performance,research};
 });

@@ -84,14 +84,16 @@
       policies. The app sets nothing and asks for nothing.
     </li>
     <li>
-      <b>Market data.</b> The figures are fetched as plain files from this same site.
-      They are refreshed by a scheduled job that runs away from your browser, so
-      normal use makes no request to NSE or IPO Watch.
+      <b>Market data.</b> The app requests public IPO and GMP figures from its
+      own data service at <code>ipo-tracker-data.hedaprateek.workers.dev</code>.
+      Cloudflare sees the request, including your IP address and browser. This
+      service fetches from IPO Watch on the server and accepts no personal
+      entries. It uses a short cache and the page checks for updates while open.
     </li>
     <li>
-      <b>The fallback path.</b> On the GitHub Pages site, if market files are
-      unavailable or stale, the app can read the same public snapshots from this
-      project's repository at <code>raw.githubusercontent.com</code>. GitHub sees
+      <b>The fallback path.</b> If the data service is unavailable, the app reads
+      saved public snapshots from this site or this project's repository at
+      <code>raw.githubusercontent.com</code>. GitHub sees
       the file request, including your IP address and browser. The request
       contains no personal entries. The app does not use public CORS relays.
     </li>

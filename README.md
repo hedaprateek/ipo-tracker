@@ -1,5 +1,31 @@
 # IPO Tracker
 
+## On-demand data and readable fallbacks — 20 November 2026
+
+The public page now asks the project's own Cloudflare data service for current
+IPO details, subscription categories and GMP on a visit, and checks again every
+two minutes while visible. Returning to the tab or reconnecting also checks for
+updates when needed. The service uses a two-minute cache, coalesces concurrent
+requests, and refreshes independently every ten minutes. GitHub's committed
+snapshots remain a fallback, rather than the only way visitors get new figures.
+
+`worker/live.mjs` uses the same tested parsers as the scheduled fetch. It serves
+only fixed public IPO/GMP endpoints, accepts no personal entries, and permits
+browser access from this project's published origin. Deploy with
+`wrangler deploy --config wrangler.live.jsonc`; the active service is
+`https://ipo-tracker-data.hedaprateek.workers.dev`. Its upload and scheduled trigger
+were verified in the Cloudflare account. No credentials are in the repository.
+
+An older fetch does not erase a quoted GMP. The comparison shows its rupee
+value, percentage and source-reported date. Previous-day category figures keep
+their own date and cannot replace a newer overall subscription. Provider and
+fetch diagnostics are folded into Source details. A delayed update produces one
+brief message and automatic checks, rather than repeated requests to Refresh.
+
+The public monitor verifies the on-demand feed as well as assets and backup
+schemas. A healthy on-demand feed can serve visitors while the monitor requests
+a repair of old published backups.
+
 ## Browser recovery — 20 November 2026
 
 Invalid saved settings are ignored in memory without clearing watchlists or notes.
@@ -26,7 +52,7 @@ data still fails monitoring even when recovery has been requested.
 
 ## Stability safeguards — 20 November 2026
 
-The browser reads published snapshots or the local server. It does not switch to
+The browser reads the on-demand service, saved snapshots or the local server. It does not switch to
 public CORS proxies when a request fails. Empty or malformed core snapshots are
 rejected; saved IPOs, source timestamps, research, history and personal notes
 survive outages. Optional files have a four-second request budget. A visitor with
@@ -65,7 +91,7 @@ reads IPO Watch's public IPO listing and dated category subscription feeds. The
 app labels the backup provider and shows source dates in each IPO detail. Missing
 lots and categories remain missing; share bid counts are never shown as numbers
 of applications. Only the latest reported subscription day is used, and outdated
-category bids are excluded from an active issue.
+category bids keep their original reported dates.
 
 Previously published closed issues remain in the archive with their original
 observation and quote timestamps. Fresh backup data replaces active issue facts
@@ -73,9 +99,9 @@ without relabelling cached archives as fresh observations. Empty/failed response
 retain the saved snapshot. The source-health file records both the working provider
 and the NSE failure.
 
-On a visit, current same-day browser snapshots are reused. Stale, failed, and
-pre-repair snapshots are revalidated even on the same day. There is no refresh
-timer or focus-triggered fetch. Watchlists and research notes are preserved.
+On a visit, saved figures render immediately and are revalidated after ninety
+seconds. Visible pages check every two minutes and returning to a tab checks
+again when needed. Watchlists and research notes are preserved.
 
 ## Research-first redesign — 23 October 2026
 
@@ -117,23 +143,22 @@ Application tracking is manual and local to the browser: record mandate approval
 allotment, refund/unblock and listing stages without attaching PANs.
 
 Use `start.cmd` for a local preview with live source fetching. It opens a browser,
-binds only to loopback, and chooses a free port if 8787 is busy. The first visit each
-day (India time) refreshes data; subsequent visits restore the saved snapshot while
-its IPO and GMP source timestamps are current and neither source failed.
-There is no timer or refresh on tab focus. Use Refresh whenever newer figures are needed;
-listed-price requests are reused for five minutes. The AI tools tab restores the scoped
+binds only to loopback, and chooses a free port if 8787 is busy. Saved snapshots
+render immediately, with background checks after ninety seconds on a new visit
+and every two minutes while visible. Listed-price requests are reused for five
+minutes. The AI tools tab restores the scoped
 retail/other-category comparison, budget, Copy details and external AI choices.
 The refresh button also updates an open detail panel without losing reading position,
 expanded figures, scenario or note selection. Details use one vertical scroll area.
 Successful source responses are saved locally; failures retain the last good data
 and timestamp and display a failed-source warning. Cache reads never advance timestamps
 or create history observations. Use `node server.js --static` explicitly for a saved-data
-preview. GitHub Pages reads published snapshots from the scheduled workflow, not this
-local proxy. Local preview does not publish changes.
+preview. GitHub Pages uses the on-demand data service with scheduled snapshots as
+a backup. Local preview does not publish changes.
 
 Source freshness is independent for IPO bids, GMP and market prices. IPO/GMP reads
-older than two hours are marked stale; stale or unavailable GMP is excluded from
-current calculations and AI inputs. This is a fetch timestamp, not a guarantee
+older than two hours are marked stale in source details. Last reported GMP remains
+visible with its date and is labelled in AI inputs. This is a fetch timestamp, not a guarantee
 that an upstream quote changed. The parser supports six/eight-column source tables
 and rejects headers. Refreshes no longer stamp old static quotes as new history.
 Older unverified history is retained as an archive but excluded from the accuracy

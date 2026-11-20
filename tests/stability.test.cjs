@@ -64,6 +64,8 @@ test('public-site check validates actual assets, schema and critically stale sou
   const stale={...gmp,fetchedAt:new Date(Date.now()-3*3600000).toISOString()};
   const resultStale=await checkPublished({load:fixtureLoad({'data/gmp.json':stale})});
   assert.ok(resultStale.warnings.length);assert.equal(resultStale.refreshNeeded,true);assert.equal(result.refreshNeeded,false);
+  const recovered=await checkPublished({load:fixtureLoad({'data/gmp.json':{...gmp,fetchedAt:'2020-01-01T00:00:00Z'},'live/gmp':gmp,'live/ipos':ipos})});
+  assert.equal(recovered.sources.gmp.status,'current');assert.equal(recovered.sources.gmp.delivery,'on-demand');assert.equal(recovered.refreshNeeded,true);
 });
 
 test('simultaneous data writers rebase and retry without losing either publication',t=>{
